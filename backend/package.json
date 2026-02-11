@@ -1,0 +1,38 @@
+{
+    "name": "procura-backend",
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch src/index.ts",
+        "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
+        "start": "node dist/index.js",
+        "debug": "node dist/index.js 2>&1",
+        "test": "vitest run",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src",
+        "lint:fix": "eslint src --fix",
+        "deploy": "npm run build && echo 'Deploy dist/ package.json package-lock.json to your server'"
+    },
+    "dependencies": {
+        "@google/genai": "^1.39.0",
+        "@hono/mcp": "^0.2.3",
+        "@hono/node-server": "^1.13.0",
+        "@modelcontextprotocol/sdk": "^1.25.3",
+        "dotenv": "^17.2.3",
+        "hono": "^4.6.0",
+        "mysql2": "^3.11.0",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.2",
+        "@types/node": "^22.0.0",
+        "@vitest/coverage-v8": "^2.1.9",
+        "esbuild": "^0.27.2",
+        "eslint": "^9.39.2",
+        "eslint-plugin-sonarjs": "^3.0.6",
+        "tsx": "^4.19.0",
+        "typescript": "^5.6.0",
+        "typescript-eslint": "^8.54.0",
+        "vitest": "^2.1.0"
+    }
+}

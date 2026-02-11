@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 262 83% 58%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 262 83% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* Dynamic viewport height - accounts for mobile browser UI */
+    overflow: hidden;
+    /* Prevent body scrolling */
+  }
+
+  #root {
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+
+/* Code block styling for chat messages */
+.prose pre {
+  @apply rounded-md p-3 overflow-x-auto my-2;
+  background-color: hsl(222 84% 10%);
+  color: hsl(210 40% 90%);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.prose pre code {
+  @apply bg-transparent p-0;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+/* Remove pre styling when containing Mermaid diagrams */
+.prose pre:has(.mermaid-container) {
+  @apply bg-transparent p-0 rounded-none;
+  background-color: transparent;
+}
+
+.mermaid-container {
+  background-color: transparent;
+}
+
+/* Blockquote styling */
+.prose blockquote {
+  @apply border-l-4 border-gray-400 dark:border-gray-600 pl-4 py-2 my-2;
+  background-color: hsl(220 14% 96%);
+  font-style: italic;
+  color: hsl(220 9% 46%);
+}
+
+.dark .prose blockquote {
+  background-color: hsl(222 47% 11%);
+  color: hsl(220 14% 71%);
+}
+
+/* Shimmer animation for streaming messages */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted)) 40%,
+      hsl(var(--accent) / 0.3) 50%,
+      hsl(var(--muted)) 60%,
+      hsl(var(--muted)) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 5s ease-in-out infinite;
+}

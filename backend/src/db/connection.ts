@@ -1,0 +1,89 @@
+/**
+ * Database Connection Pool
+ * MySQL2 with typed queries
+ */
+
+import mysql from "mysql2/promise";
+import type { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import { getConfig } from "../config";
+
+let pool: Pool | null = null;
+
+export function getPool(): Pool {
+    if (!pool) {
+        const config = getConfig();
+        pool = mysql.createPool({
+            host: config.db.host,
+            port: config.db.port,
+            database: config.db.name,
+            user: config.db.user,
+            password: config.db.password,
+            charset: "utf8mb4",
+            waitForConnections: true,
+            connectionLimit: 10,
+            queueLimit: 0,
+        });
+    }
+    return pool;
+}
+
+// For testing: close pool
+export async function closePool(): Promise<void> {
+    if (pool) {
+        await pool.end();
+        pool = null;
+    }
+}
+
+// Typed query helpers
+export interface SyncObjectRow extends RowDataPacket {
+    user_id: string;
+    object_id: string;
+    encrypted_blob: Buffer;
+    last_modified: number;
+    size_bytes?: number;
+}
+
+export interface SyncObjectListRow extends RowDataPacket {
+    object_id: string;
+    last_modified: number;
+    size_bytes: number;
+}
+
+export async function listObjects(userId: string): Promise<SyncObjectListRow[]> {
+    const [rows] = await getPool().execute<SyncObjectListRow[]>(
+        `SELECT object_id, last_modified, LENGTH(encrypted_blob) as size_bytes
+         FROM sync_objects
+         WHERE user_id = ?
+         ORDER BY last_modified DESC`,
+        [userId]
+    );
+    return rows;
+}
+
+export async function getObject(userId: string, objectId: string): Promise<SyncObjectRow | null> {
+    const [rows] = await getPool().execute<SyncObjectRow[]>(
+        `SELECT encrypted_blob, last_modified
+         FROM sync_objects
+         WHERE user_id = ? AND object_id = ?`,
+        [userId, objectId]
+    );
+    return rows[0] || null;
+}
+
+export async function upsertObject(
+    userId: string,
+    objectId: string,
+    encryptedBlob: Buffer,
+    lastModified: number
+): Promise<ResultSetHeader> {
+    const [result] = await getPool().execute<ResultSetHeader>(
+        `INSERT INTO sync_objects (user_id, object_id, encrypted_blob, last_modified)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+             encrypted_blob = VALUES(encrypted_blob),
+             last_modified = VALUES(last_modified)`,
+        [userId, objectId, encryptedBlob, lastModified]
+    );
+    return result;
+}

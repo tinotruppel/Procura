@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Callback - Procura</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .container {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .error {
+            color: #f87171;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <p id="status">Completing authentication...</p>
+    </div>
+
+    <script>
+        (function () {
+            const statusEl = document.getElementById('status');
+            const spinnerEl = document.getElementById('spinner');
+
+            try {
+                // Parse the hash fragment for OAuth response
+                const hash = window.location.hash.substring(1);
+                const params = new URLSearchParams(hash);
+
+                const accessToken = params.get('access_token');
+                const expiresIn = params.get('expires_in');
+                const error = params.get('error');
+                const errorDescription = params.get('error_description');
+
+                if (error) {
+                    throw new Error(errorDescription || error);
+                }
+
+                if (!accessToken) {
+                    throw new Error('No access token in response');
+                }
+
+                // Send token back to opener window
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'GOOGLE_OAUTH_SUCCESS',
+                        accessToken: accessToken,
+                        expiresIn: parseInt(expiresIn || '3600', 10)
+                    }, window.location.origin);
+
+                    statusEl.textContent = 'Authentication successful! This window will close automatically...';
+                    spinnerEl.style.display = 'none';
+
+                    setTimeout(() => window.close(), 1500);
+                } else {
+                    throw new Error('Opener window not found');
+                }
+            } catch (err) {
+                spinnerEl.style.display = 'none';
+                statusEl.className = 'error';
+                statusEl.textContent = 'Error: ' + err.message;
+
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'GOOGLE_OAUTH_ERROR',
+                        error: err.message
+                    }, window.location.origin);
+                }
+
+                setTimeout(() => window.close(), 3000);
+            }
+        })();
+    </script>
+</body>
+
+</html>

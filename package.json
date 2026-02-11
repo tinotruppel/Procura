@@ -1,0 +1,23 @@
+{
+    "name": "procura",
+    "version": "0.1.0",
+    "private": true,
+    "description": "AI-powered browser extension & PWA with multi-provider LLM support, tool orchestration, and end-to-end encrypted sync.",
+    "license": "MIT",
+    "author": "Tino Truppel",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/tinotruppel/procura.git"
+    },
+    "scripts": {
+        "test": "bash scripts/test-all.sh",
+        "test:frontend": "cd frontend && npx vitest run --coverage",
+        "test:backend": "cd backend && npx vitest run --coverage",
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "cd backend && npm run dev:node",
+        "build:frontend": "cd frontend && npm run build:extension",
+        "build:backend": "cd backend && npm run build",
+        "lint": "cd frontend && npx eslint src/ && cd ../backend && npx eslint src/",
+        "release": "bash scripts/release.sh"
+    }
+}

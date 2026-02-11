@@ -1,0 +1,56 @@
+{
+    "title": "Procura Test Data",
+    "version": "1.0",
+    "generated": "2025-02-11",
+    "purpose": "Sample file for testing the parse_file tool",
+    "metrics": {
+        "activeUsers": 142,
+        "sessionsToday": 587,
+        "avgResponseTime": "1.2s",
+        "toolCallSuccess": 0.94
+    },
+    "topTools": [
+        {
+            "name": "get_weather",
+            "calls": 203,
+            "avgLatency": "850ms"
+        },
+        {
+            "name": "search",
+            "calls": 178,
+            "avgLatency": "1.4s"
+        },
+        {
+            "name": "memory",
+            "calls": 156,
+            "avgLatency": "45ms"
+        },
+        {
+            "name": "navigate_to",
+            "calls": 89,
+            "avgLatency": "2.1s"
+        },
+        {
+            "name": "calculator",
+            "calls": 67,
+            "avgLatency": "12ms"
+        }
+    ],
+    "feedback": [
+        {
+            "user": "Alice",
+            "rating": 5,
+            "comment": "Fast and accurate weather data."
+        },
+        {
+            "user": "Bob",
+            "rating": 4,
+            "comment": "Knowledge base search could be faster."
+        },
+        {
+            "user": "Charlie",
+            "rating": 5,
+            "comment": "Mermaid diagrams render perfectly."
+        }
+    ]
+}
