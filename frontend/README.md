@@ -371,7 +371,7 @@ You are my assistant. Run a comprehensive capabilities test in ONE response (use
 
 12) GitHub App Help:
 - Read and summarize the file:
-  tinotruppel / procura / prototypes/frontend/README.md
+  tinotruppel / procura / frontend/README.md
 - Give me a short "How to use this app" section.
 
 13) CV Database:

@@ -33,6 +33,34 @@ interface FlowcaseSearchResponse {
 }
 
 // =============================================================================
+// Response Sanitization
+// =============================================================================
+
+/**
+ * Recursively strip image URLs from API responses to reduce context window usage.
+ * Signed S3 URLs can be 1000+ characters each, and a single CV may contain 5+ of them.
+ */
+function stripImages(obj: unknown): unknown {
+    if (obj === null || obj === undefined || typeof obj !== "object") {
+        return obj;
+    }
+
+    if (Array.isArray(obj)) {
+        return obj.map(stripImages);
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+        // Skip image-related keys entirely
+        if (key === "image" || key === "thumb" || key === "fit_thumb" || key === "large" || key === "small_thumb") {
+            continue;
+        }
+        result[key] = stripImages(value);
+    }
+    return result;
+}
+
+// =============================================================================
 // Flowcase API Helpers
 // =============================================================================
 
@@ -171,7 +199,7 @@ if (auth) {
                 content: [{
                     type: "text" as const,
                     text: JSON.stringify({
-                        results: results.cvs || [],
+                        results: stripImages(results.cvs || []),
                         total: results.total || results.cvs?.length || 0,
                         offset,
                         size: limitedSize,
@@ -204,7 +232,7 @@ if (auth) {
                 content: [{
                     type: "text" as const,
                     text: JSON.stringify({
-                        results: results.cvs || [],
+                        results: stripImages(results.cvs || []),
                         total: results.total || results.cvs?.length || 0,
                         offset,
                         size: limitedSize,
@@ -235,7 +263,7 @@ if (auth) {
                 content: [{
                     type: "text" as const,
                     text: JSON.stringify({
-                        cv,
+                        cv: stripImages(cv),
                         userId: user_id,
                         cvId: cv_id,
                         name: (cv.name as string) || (cv.user as { name?: string })?.name,
