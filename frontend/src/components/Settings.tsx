@@ -1157,6 +1157,10 @@ export function Settings({ onBack }: SettingsProps) {
                     </CardContent>
                 </Card>
 
+                <p className="text-center text-xs text-muted-foreground pb-2">
+                    Procura v{__APP_VERSION__}{__DEV_BUILD__ ? "-dev" : ""}
+                </p>
+
             </div >
         </div >
     );

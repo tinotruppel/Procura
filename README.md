@@ -18,6 +18,21 @@ Procura turns your browser into an AI workspace. Available as a Chrome Extension
 
 ---
 
+## 📦 Install
+
+### Chrome Extension (Pre-built)
+
+1. Download the latest **`procura-vX.Y.Z.zip`** from [**Releases**](../../releases/latest)
+2. Unzip the downloaded file
+3. Open Chrome → navigate to `chrome://extensions`
+4. Enable **Developer mode** (toggle in the top-right corner)
+5. Click **Load unpacked** and select the unzipped folder
+6. Procura appears in your sidebar — pin it for quick access
+
+> **Tip:** To update, download the new zip, replace the folder contents, and click the reload button on `chrome://extensions`.
+
+---
+
 ## 🏗 Architecture
 
 ```

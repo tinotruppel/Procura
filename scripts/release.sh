@@ -55,7 +55,27 @@ git -C "$ROOT" commit -m "release: v$VERSION"
 git -C "$ROOT" tag -a "v$VERSION" -m "Release v$VERSION"
 
 echo ""
-echo "✅ Released v$VERSION"
+echo "Building Chrome Extension ..."
+(cd "$ROOT/frontend" && npm run build:extension)
+
+ZIP_NAME="procura-v$VERSION.zip"
+echo "Creating $ZIP_NAME ..."
+(cd "$ROOT/frontend/dist-extension" && zip -r "$ROOT/$ZIP_NAME" .)
+
 echo ""
-echo "To publish:"
-echo "  git push origin main --tags"
+echo "Pushing to origin ..."
+git -C "$ROOT" push origin main --tags
+
+echo ""
+echo "Creating GitHub Release ..."
+gh release create "v$VERSION" "$ROOT/$ZIP_NAME" \
+    --title "v$VERSION" \
+    --notes "See [CHANGELOG.md](CHANGELOG.md) for details."
+
+# Clean up local zip
+rm -f "$ROOT/$ZIP_NAME"
+
+echo ""
+echo "✅ Released v$VERSION"
+echo "   → GitHub Release: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/v$VERSION"
+
