@@ -94,6 +94,21 @@ export function getFile(id: string): StoredFile | undefined {
  * Check if a file exists in the store.
  */
 /**
+ * Find a file in the store by filename (case-insensitive).
+ * Returns the most recently added match (last inserted wins).
+ */
+export function getFileByName(name: string): { id: string; file: StoredFile } | undefined {
+    const lower = name.toLowerCase();
+    let found: { id: string; file: StoredFile } | undefined;
+    for (const [id, file] of fileStore) {
+        if (file.fileName.toLowerCase() === lower) {
+            found = { id, file };
+        }
+    }
+    return found;
+}
+
+/**
  * Get the most recently added file (last in the Map).
  * Returns the file with its ID, or undefined if store is empty.
  */

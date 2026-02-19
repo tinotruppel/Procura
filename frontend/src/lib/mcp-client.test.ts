@@ -303,6 +303,41 @@ describe("MCP Client", () => {
 
             expect(resolved.fileData).toBe("SGVsbG8gV29ybGQ=");
         });
+
+        it("should resolve file by fileName when fileData is empty", () => {
+            vi.spyOn(fileStore, "getFileByName").mockReturnValue({
+                id: "file_abc12345",
+                file: {
+                    dataUrl: "data:application/pdf;base64,cGRmQ29udGVudA==",
+                    mimeType: "application/pdf",
+                    fileName: "Review_MaxBaumgraß.pdf",
+                    fileSize: 500,
+                },
+            });
+
+            const args = {
+                fileData: "",
+                fileName: "Review_MaxBaumgraß.pdf",
+                mimeType: "application/pdf",
+            };
+            const resolved = resolveFileReferences(args);
+
+            expect(resolved.fileData).toBe("cGRmQ29udGVudA==");
+            expect(resolved.fileName).toBe("Review_MaxBaumgraß.pdf");
+            expect(resolved.mimeType).toBe("application/pdf");
+        });
+
+        it("should not call getFileByName when fileData has content", () => {
+            const spy = vi.spyOn(fileStore, "getFileByName");
+            const args = {
+                fileData: "SGVsbG8gV29ybGQ=",
+                fileName: "doc.pdf",
+                mimeType: "application/pdf",
+            };
+            resolveFileReferences(args);
+
+            expect(spy).not.toHaveBeenCalled();
+        });
     });
 
     describe("sendMcpFetch (via connectToServer/listTools/callTool)", () => {

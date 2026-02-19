@@ -17,7 +17,7 @@ import {
     McpClientInfo,
 } from "./mcp-types";
 import { getMcpProxyConfig, McpProxyConfig } from "@/lib/storage";
-import { getFile } from "@/lib/file-store";
+import { getFile, getFileByName } from "@/lib/file-store";
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 
@@ -33,9 +33,12 @@ const CLIENT_INFO: McpClientInfo = {
  * Resolve file references in tool arguments.
  * Converts file references (file_xxx) to fileData/fileName/mimeType for MCP servers.
  * 
- * Checks both:
- * - fileRef parameter (recommended way for LLMs to reference files)
- * - fileData parameter (if LLM put reference directly into the data field)
+ * Resolution order:
+ * 1. fileRef parameter (recommended way for LLMs to reference files)
+ * 2. fileData parameter starting with file_ (LLM put reference directly into the data field)
+ * 3. fileName fallback — if fileData is empty/missing but fileName is present,
+ *    look up the file by name in the store (handles LLMs that know the filename
+ *    but can't produce base64 themselves)
  * 
  * This allows LLMs to reference files without generating base64 themselves.
  */
@@ -76,6 +79,18 @@ export function resolveFileReferences(args: Record<string, unknown>): Record<str
             resolved.fileData = fileInfo.fileData;
             resolved.fileName = resolved.fileName ?? fileInfo.fileName;
             resolved.mimeType = resolved.mimeType ?? fileInfo.mimeType;
+        }
+    }
+    // Last resort: fileData is empty/missing but fileName is present — look up by name
+    else if ((!resolved.fileData || resolved.fileData === "") && typeof resolved.fileName === "string") {
+        const match = getFileByName(resolved.fileName);
+        if (match) {
+            const base64Match = /;base64,(.+)$/.exec(match.file.dataUrl);
+            if (base64Match) {
+                resolved.fileData = base64Match[1];
+                resolved.mimeType = resolved.mimeType ?? match.file.mimeType;
+                console.log(`[MCP] Resolved file by name: ${resolved.fileName} → ${match.id}`);
+            }
         }
     }
 
