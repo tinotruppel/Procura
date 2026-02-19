@@ -8,6 +8,10 @@ import {
 } from "@/lib/storage";
 import { fetchLangfusePromptList, sendLangfuseBatch, LangfuseSpanInput } from "@/lib/langfuse";
 
+function matchesTags(promptTags: string[] | undefined, filterTags: string[]): boolean {
+    return promptTags?.some(t => filterTags.includes(t)) ?? false;
+}
+
 export interface SendTraceParams {
     traceId: string;
     generationId: string;
@@ -44,7 +48,7 @@ export function useLangfuseTracing(messagesLength: number) {
                     const remote = await fetchLangfusePromptList(config);
                     const tags = config.tags?.filter(t => t.length > 0) ?? [];
                     const filtered = tags.length > 0
-                        ? remote.filter(p => p.tags?.some(t => tags.includes(t)))
+                        ? remote.filter(p => matchesTags(p.tags, tags))
                         : remote;
                     setRemotePrompts(filtered.map(p => ({ name: p.name })));
                 } else {

@@ -1030,12 +1030,28 @@ export function Settings({ onBack }: SettingsProps) {
                                             setLangfuseTesting(true);
                                             setLangfuseTestResult(null);
                                             const result = await testLangfuseConnection(langfuseConfig);
-                                            setLangfuseTestResult({
-                                                success: result.success,
-                                                message: result.success
-                                                    ? `Connected! Found ${result.promptCount} prompt(s).`
-                                                    : result.error || "Connection failed",
-                                            });
+                                            if (result.success) {
+                                                const tags = langfuseConfig.tags?.filter(t => t.length > 0) ?? [];
+                                                if (tags.length > 0 && result.promptCount !== undefined) {
+                                                    const { fetchLangfusePromptList } = await import("@/lib/langfuse");
+                                                    const all = await fetchLangfusePromptList(langfuseConfig);
+                                                    const filtered = all.filter(p => p.tags?.some(t => tags.includes(t)));
+                                                    setLangfuseTestResult({
+                                                        success: true,
+                                                        message: `Connected! Found ${filtered.length} of ${all.length} prompt(s) matching tags.`,
+                                                    });
+                                                } else {
+                                                    setLangfuseTestResult({
+                                                        success: true,
+                                                        message: `Connected! Found ${result.promptCount} prompt(s).`,
+                                                    });
+                                                }
+                                            } else {
+                                                setLangfuseTestResult({
+                                                    success: false,
+                                                    message: result.error || "Connection failed",
+                                                });
+                                            }
                                             setLangfuseTesting(false);
                                         }}
                                     >
