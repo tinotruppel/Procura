@@ -8,6 +8,7 @@ import {
     createNewChat,
     ChatSession,
     getSelectedSystemPromptId,
+    setSelectedSystemPromptId,
     toggleChatPinned,
 } from "@/lib/storage";
 import { exportChatAsMarkdown } from "@/lib/chat/export";
@@ -133,6 +134,13 @@ export function useChatSessions() {
         );
     };
 
+    /** Update prompt ID and persist immediately to both global storage and the chat session. */
+    const updatePromptId = async (newId: string | null) => {
+        setSelectedPromptId(newId);
+        await setSelectedSystemPromptId(newId);
+        await saveCurrentChat(messages, chatTitle, newId);
+    };
+
     const exportAsMarkdown = () => {
         exportChatAsMarkdown(messages, chatTitle || "Untitled Chat");
     };
@@ -151,6 +159,7 @@ export function useChatSessions() {
         selectChatById,
         togglePin,
         saveChat,
+        updatePromptId,
         exportAsMarkdown,
     };
 }

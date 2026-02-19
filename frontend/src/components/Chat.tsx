@@ -16,7 +16,6 @@ import {
     getDebugMode,
     createNewChat,
     forkConversation,
-    setSelectedSystemPromptId,
     getCustomBaseUrl,
     updateChatTitleById,
 } from "@/lib/storage";
@@ -180,8 +179,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         setError(null);
 
         if (resolvedPromptId) {
-            sessions.setSelectedPromptId(resolvedPromptId);
-            await setSelectedSystemPromptId(resolvedPromptId);
+            await sessions.updatePromptId(resolvedPromptId);
         }
 
         if (agentMsg) {
@@ -584,7 +582,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
                             <div className="mt-4">
                                 <Select
                                     value={sessions.selectedPromptId || "_none_"}
-                                    onValueChange={async (value) => { const newId = value === "_none_" ? null : value; sessions.setSelectedPromptId(newId); await setSelectedSystemPromptId(newId); }}
+                                    onValueChange={async (value) => { const newId = value === "_none_" ? null : value; await sessions.updatePromptId(newId); }}
                                 >
                                     <SelectTrigger className="w-[220px] mx-auto text-xs"><SelectValue placeholder="Select a prompt..." /></SelectTrigger>
                                     <SelectContent>
