@@ -36,10 +36,20 @@ export async function setTheme(theme: Theme): Promise<void> {
 
 export function applyTheme(theme: Theme): void {
     const root = document.documentElement;
+    let isDark: boolean;
     if (theme === "system") {
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        root.classList.toggle("dark", prefersDark);
+        isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     } else {
-        root.classList.toggle("dark", theme === "dark");
+        isDark = theme === "dark";
+    }
+    root.classList.toggle("dark", isDark);
+
+    // Update the status bar color for PWA (Android/iOS)
+    const themeColor = isDark ? "#020817" : "#ffffff";
+    const meta = typeof document?.querySelector === "function"
+        ? document.querySelector('meta[name="theme-color"]')
+        : null;
+    if (meta) {
+        meta.setAttribute("content", themeColor);
     }
 }

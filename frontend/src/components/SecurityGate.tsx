@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, Check, Copy, Key, Lock, Upload } from "lucide-react";
+import { AlertTriangle, Check, Copy, Fingerprint, Key, Lock, Upload } from "lucide-react";
 import {
     configureVaultWithKey,
     formatVaultKey,
@@ -11,6 +11,8 @@ import {
     isVaultKeySyntaxValid,
     restoreVaultFromSession,
     unlockVault,
+    isBiometricEnrolled,
+    unlockWithBiometric,
 } from "@/lib/vault";
 import { importConfig, ExportedConfig } from "@/lib/storage";
 
@@ -28,6 +30,24 @@ export function SecurityGate({ onUnlocked }: SecurityGateProps) {
     const [keyCopied, setKeyCopied] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+    const handleBiometricUnlock = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const success = await unlockWithBiometric();
+            if (success) {
+                onUnlocked();
+            } else {
+                setError("Biometric unlock failed. Please use your security key.");
+            }
+        } catch (e) {
+            setError(`Biometric unlock failed: ${e}`);
+        } finally {
+            setLoading(false);
+        }
+    }, [onUnlocked]);
 
     useEffect(() => {
         async function init() {
@@ -35,9 +55,18 @@ export function SecurityGate({ onUnlocked }: SecurityGateProps) {
             const isConfigured = await isVaultConfigured();
             setConfigured(isConfigured);
             setMode(isConfigured ? "unlock" : "generate");
+
+            // Check biometric enrollment and auto-trigger if available
+            if (isConfigured) {
+                const enrolled = await isBiometricEnrolled();
+                setBiometricAvailable(enrolled);
+                if (enrolled) {
+                    handleBiometricUnlock();
+                }
+            }
         }
         init();
-    }, []);
+    }, [handleBiometricUnlock]);
 
     const handleUnlock = async () => {
         const key = inputKey.trim();
@@ -225,6 +254,17 @@ export function SecurityGate({ onUnlocked }: SecurityGateProps) {
 
                     {mode === "unlock" ? (
                         <div className="space-y-2">
+                            {biometricAvailable && (
+                                <Button
+                                    onClick={handleBiometricUnlock}
+                                    disabled={loading}
+                                    className="w-full"
+                                    variant="default"
+                                >
+                                    <Fingerprint className="h-4 w-4 mr-2" />
+                                    {loading ? "Authenticating..." : "Unlock with Biometrics"}
+                                </Button>
+                            )}
                             <label className="text-xs font-medium">Security Key</label>
                             <Input
                                 type="password"
@@ -233,8 +273,8 @@ export function SecurityGate({ onUnlocked }: SecurityGateProps) {
                                 onChange={(e) => setInputKey(e.target.value)}
                                 className="h-8 text-xs font-mono"
                             />
-                            <Button onClick={handleUnlock} disabled={loading} className="w-full">
-                                {loading ? "Unlocking..." : "Unlock"}
+                            <Button onClick={handleUnlock} disabled={loading} className="w-full" variant={biometricAvailable ? "outline" : "default"}>
+                                {loading ? "Unlocking..." : "Unlock with Key"}
                             </Button>
                         </div>
                     ) : (

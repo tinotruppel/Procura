@@ -29,4 +29,8 @@ export const STORAGE_KEYS = {
     CLOUD_CONFIG_ENC: "procura_cloud_config_enc",
     // UI Settings
     THEME: "procura_theme",
+    // Biometric Unlock (WebAuthn PRF)
+    BIOMETRIC_CREDENTIAL_ID: "procura_biometric_cred_id",
+    BIOMETRIC_ENCRYPTED_KEY: "procura_biometric_enc_key",
+    BIOMETRIC_SALT: "procura_biometric_salt",
 };

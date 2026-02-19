@@ -54,10 +54,16 @@ import { fetchCustomModels } from "@/lib/custom-openai";
 import { testLangfuseConnection } from "@/lib/langfuse";
 import { allTools, ToolConfigMap } from "@/tools";
 import { platform } from "@/platform";
-import { ArrowLeft, Calculator, Camera, Globe, MapPin, ChevronDown, ChevronUp, Download, Upload, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Calculator, Camera, Fingerprint, Globe, MapPin, ChevronDown, ChevronUp, Download, Upload, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { McpServerSettings } from "@/components/McpServerSettings";
 import { CloudSettings } from "@/components/CloudSettings";
 import { ToolConnectionTester } from "@/tools/types";
+import {
+    isBiometricAvailable,
+    isBiometricEnrolled,
+    enrollBiometric,
+    removeBiometric,
+} from "@/lib/vault";
 
 interface SettingsProps {
     onBack: () => void;
@@ -192,6 +198,83 @@ function ToolCustomActionUI({
     );
 }
 
+function BiometricSettings() {
+    const [available, setAvailable] = useState(false);
+    const [enrolled, setEnrolled] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+    useEffect(() => {
+        async function check() {
+            const avail = await isBiometricAvailable();
+            setAvailable(avail);
+            if (avail) {
+                setEnrolled(await isBiometricEnrolled());
+            }
+        }
+        check();
+    }, []);
+
+    if (!available) return null;
+
+    const handleToggle = async () => {
+        setLoading(true);
+        setStatus(null);
+        try {
+            if (enrolled) {
+                await removeBiometric();
+                setEnrolled(false);
+                setStatus({ success: true, message: "Biometric unlock removed" });
+            } else {
+                await enrollBiometric();
+                setEnrolled(true);
+                setStatus({ success: true, message: "Biometric unlock enabled" });
+            }
+        } catch (e) {
+            setStatus({ success: false, message: e instanceof Error ? e.message : "Failed" });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Card>
+            <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                            <Fingerprint className="h-4 w-4" />
+                            Biometric Unlock
+                        </div>
+                        <p className="text-xs font-normal text-muted-foreground">
+                            {enrolled
+                                ? "Unlock with Face ID or fingerprint instead of your security key"
+                                : "Enable biometric authentication for faster access"}
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleToggle}
+                        disabled={loading}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${enrolled ? "bg-primary" : "bg-muted"
+                            } ${loading ? "opacity-50" : ""}`}
+                    >
+                        <span
+                            className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${enrolled ? "translate-x-5" : "translate-x-0"
+                                }`}
+                        />
+                    </button>
+                </CardTitle>
+            </CardHeader>
+            {status && (
+                <CardContent className="pt-0">
+                    <p className={`text-xs ${status.success ? "text-green-600" : "text-destructive"}`}>
+                        {status.message}
+                    </p>
+                </CardContent>
+            )}
+        </Card>
+    );
+}
 // eslint-disable-next-line max-lines-per-function
 export function Settings({ onBack }: SettingsProps) {
     const [provider, setProviderState] = useState<LLMProvider>("gemini");
@@ -670,6 +753,9 @@ export function Settings({ onBack }: SettingsProps) {
                         </div>
                     </CardContent>
                 </Card>
+
+                {/* Biometric Unlock */}
+                <BiometricSettings />
 
                 <Card>
                     <CardHeader className="pb-4">

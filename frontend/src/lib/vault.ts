@@ -350,3 +350,238 @@ export async function decryptWithVault<T>(encryptedBase64: string): Promise<T> {
     const json = new TextDecoder().decode(decrypted);
     return JSON.parse(json) as T;
 }
+
+// ============================================================================
+// Biometric Unlock (WebAuthn PRF Extension)
+// ============================================================================
+
+const BIOMETRIC_CRED_KEY = "procura_biometric_cred_id";
+const BIOMETRIC_ENC_KEY = "procura_biometric_enc_key";
+const BIOMETRIC_SALT_KEY = "procura_biometric_salt";
+
+function getBiometricRp(): PublicKeyCredentialRpEntity {
+    // Use current origin's hostname as RP ID (required for WebAuthn)
+    return { name: "Procura", id: location.hostname };
+}
+
+/** Check if the platform supports biometric (passkey) unlock via WebAuthn PRF. */
+export async function isBiometricAvailable(): Promise<boolean> {
+    if (typeof window === "undefined" || !window.PublicKeyCredential) return false;
+    try {
+        const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        return available;
+    } catch {
+        return false;
+    }
+}
+
+/** Check if biometric unlock has been enrolled on this device. */
+export async function isBiometricEnrolled(): Promise<boolean> {
+    try {
+        const result = await platform.storage.get<string>([BIOMETRIC_CRED_KEY, BIOMETRIC_ENC_KEY, BIOMETRIC_SALT_KEY]);
+        return !!(result[BIOMETRIC_CRED_KEY] && result[BIOMETRIC_ENC_KEY] && result[BIOMETRIC_SALT_KEY]);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Enroll biometric unlock. Must be called while vault is unlocked.
+ * Creates a passkey with the PRF extension and encrypts the current baseKey.
+ */
+export async function enrollBiometric(): Promise<void> {
+    if (!cachedBaseKey) throw new Error("Vault must be unlocked to enroll biometric");
+
+    const rp = getBiometricRp();
+    const prfSalt = crypto.getRandomValues(new Uint8Array(32));
+
+    // Create passkey with PRF extension
+    const credential = await navigator.credentials.create({
+        publicKey: {
+            rp,
+            user: {
+                id: crypto.getRandomValues(new Uint8Array(16)),
+                name: "procura-vault",
+                displayName: "Procura Vault",
+            },
+            challenge: crypto.getRandomValues(new Uint8Array(32)),
+            pubKeyCredParams: [
+                { alg: -7, type: "public-key" },   // ES256
+                { alg: -257, type: "public-key" },  // RS256
+            ],
+            authenticatorSelection: {
+                authenticatorAttachment: "platform",
+                userVerification: "required",
+                residentKey: "required",
+                requireResidentKey: true,
+            },
+            extensions: {
+                prf: { eval: { first: prfSalt } },
+            } as AuthenticationExtensionsClientInputs,
+        },
+    }) as PublicKeyCredential & { getClientExtensionResults(): { prf?: { enabled?: boolean; results?: { first: ArrayBuffer } } } };
+
+    if (!credential) throw new Error("Passkey creation cancelled");
+
+    const ext = credential.getClientExtensionResults() as Record<string, unknown>;
+    const prfExt = ext.prf as { enabled?: boolean; results?: { first: ArrayBuffer } } | undefined;
+
+    // If PRF wasn't available during creation, we'll try on the first get() call instead
+    // Some authenticators only support PRF during authentication, not registration
+    let wrappingKeyBytes: ArrayBuffer | null = prfExt?.results?.first ?? null;
+
+    if (!wrappingKeyBytes) {
+        // Try getting PRF output via assertion instead
+        const credId = new Uint8Array(credential.rawId);
+        const assertion = await navigator.credentials.get({
+            publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rpId: rp.id,
+                allowCredentials: [{ id: credId, type: "public-key" }],
+                userVerification: "required",
+                extensions: {
+                    prf: { eval: { first: prfSalt } },
+                } as AuthenticationExtensionsClientInputs,
+            },
+        });
+
+        const assertExt = (assertion as PublicKeyCredential)?.getClientExtensionResults() as Record<string, unknown>;
+        const assertPrf = assertExt?.prf as { results?: { first: ArrayBuffer } } | undefined;
+        wrappingKeyBytes = assertPrf?.results?.first ?? null;
+    }
+
+    if (!wrappingKeyBytes) {
+        throw new Error("Biometric unlock not supported on this device (PRF extension unavailable)");
+    }
+
+    // Derive wrapping key from PRF output via HKDF
+    const wrappingKey = await deriveWrappingKey(new Uint8Array(wrappingKeyBytes));
+
+    // Encrypt the baseKey with the wrapping key
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        wrappingKey,
+        toArrayBuffer(cachedBaseKey),
+    );
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(encrypted), iv.length);
+
+    // Store credential ID, encrypted key, and salt
+    const credIdBase64 = uint8ArrayToBase64(new Uint8Array(credential.rawId));
+    await platform.storage.set({
+        [BIOMETRIC_CRED_KEY]: credIdBase64,
+        [BIOMETRIC_ENC_KEY]: uint8ArrayToBase64(combined),
+        [BIOMETRIC_SALT_KEY]: uint8ArrayToBase64(prfSalt),
+    });
+
+    console.log("[Vault] Biometric unlock enrolled successfully");
+}
+
+/**
+ * Unlock the vault using biometric authentication (passkey + PRF).
+ * Returns true if successful, false if cancelled or failed.
+ */
+export async function unlockWithBiometric(): Promise<boolean> {
+    const stored = await platform.storage.get<string>([BIOMETRIC_CRED_KEY, BIOMETRIC_ENC_KEY, BIOMETRIC_SALT_KEY]);
+    const credIdBase64 = stored[BIOMETRIC_CRED_KEY];
+    const encKeyBase64 = stored[BIOMETRIC_ENC_KEY];
+    const saltBase64 = stored[BIOMETRIC_SALT_KEY];
+
+    if (!credIdBase64 || !encKeyBase64 || !saltBase64) return false;
+
+    const rp = getBiometricRp();
+    const credId = base64ToUint8Array(credIdBase64);
+    const prfSalt = base64ToUint8Array(saltBase64);
+
+    try {
+        const assertion = await navigator.credentials.get({
+            publicKey: {
+                challenge: crypto.getRandomValues(new Uint8Array(32)),
+                rpId: rp.id,
+                allowCredentials: [{ id: toArrayBuffer(credId), type: "public-key" }],
+                userVerification: "required",
+                extensions: {
+                    prf: { eval: { first: prfSalt } },
+                } as AuthenticationExtensionsClientInputs,
+            },
+        });
+
+        const unlockExt = (assertion as PublicKeyCredential)?.getClientExtensionResults() as Record<string, unknown>;
+        const unlockPrf = unlockExt?.prf as { results?: { first: ArrayBuffer } } | undefined;
+
+        const prfResult = unlockPrf?.results?.first;
+        if (!prfResult) {
+            console.warn("[Vault] Biometric authentication succeeded but PRF result missing");
+            return false;
+        }
+
+        // Derive same wrapping key from PRF output
+        const wrappingKey = await deriveWrappingKey(new Uint8Array(prfResult));
+
+        // Decrypt the baseKey
+        const combined = base64ToUint8Array(encKeyBase64);
+        const iv = combined.slice(0, 12);
+        const ciphertext = combined.slice(12);
+        const decrypted = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv },
+            wrappingKey,
+            ciphertext,
+        );
+
+        const baseKey = new Uint8Array(decrypted);
+
+        // Verify the decrypted key matches the vault meta
+        const meta = await readVaultMeta();
+        if (!meta) return false;
+        const keyHashBase64 = await hashBaseKey(baseKey);
+        if (keyHashBase64 !== meta.keyHashBase64) {
+            console.warn("[Vault] Biometric decrypted key does not match vault hash");
+            return false;
+        }
+
+        // Restore vault state
+        cachedBaseKey = baseKey;
+        cachedLocalKey = null;
+        cachedSyncMasterKey = null;
+        await setSessionValue(uint8ArrayToBase64(baseKey));
+
+        console.log("[Vault] Biometric unlock successful");
+        return true;
+    } catch (e) {
+        // User cancelled or authenticator error
+        console.warn("[Vault] Biometric unlock failed:", e);
+        return false;
+    }
+}
+
+/** Remove biometric enrollment from this device. */
+export async function removeBiometric(): Promise<void> {
+    await platform.storage.remove([BIOMETRIC_CRED_KEY, BIOMETRIC_ENC_KEY, BIOMETRIC_SALT_KEY]);
+    console.log("[Vault] Biometric enrollment removed");
+}
+
+/** Derive AES-GCM wrapping key from PRF output via HKDF. */
+async function deriveWrappingKey(prfOutput: Uint8Array): Promise<CryptoKey> {
+    const hkdfKey = await crypto.subtle.importKey(
+        "raw",
+        toArrayBuffer(prfOutput),
+        "HKDF",
+        false,
+        ["deriveKey"],
+    );
+    return crypto.subtle.deriveKey(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: new TextEncoder().encode("procura-biometric-v1"),
+            info: new TextEncoder().encode("biometric-wrap"),
+        },
+        hkdfKey,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"],
+    );
+}
+
