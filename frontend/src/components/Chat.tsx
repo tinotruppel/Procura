@@ -70,7 +70,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
     const abortControllerRef = useRef<AbortController | null>(null);
     const isAbortedRef = useRef(false);
     const requestGenRef = useRef(0);
-    const handleSendRef = useRef<((overrideInput?: string) => Promise<void>) | null>(null);
+    const handleSendRef = useRef<((overrideInput?: string, options?: { isScheduled?: boolean }) => Promise<void>) | null>(null);
     const triggerLLMContinuationRef = useRef<(() => Promise<void>) | null>(null);
 
     // --- Extracted hooks ---
@@ -121,7 +121,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
             if (timerChatId === sessions.chatId) {
                 setTimeout(async () => {
                     if (handleSendRef.current) {
-                        await handleSendRef.current(scheduledMessage);
+                        await handleSendRef.current(scheduledMessage, { isScheduled: true });
                     }
                 }, 100);
             } else {
@@ -244,7 +244,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
 
     // --- LLM Orchestration ---
 
-    const handleSend = async (overrideInput?: string) => {
+    const handleSend = async (overrideInput?: string, options?: { isScheduled?: boolean }) => {
         const effectiveInput = overrideInput ?? input;
         if (!effectiveInput.trim() && attachments.pendingImages.length === 0 && attachments.pendingFiles.length === 0) return;
 
@@ -269,6 +269,13 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
 
         const { displayMessage, llmMessage, registeredFiles, imageIds, llmContent } =
             prepareMessagesWithAttachments({ input: effectiveInput, pendingImages: attachments.pendingImages, pendingFiles: attachments.pendingFiles });
+
+        // Scheduled messages display as assistant but send as user to the LLM
+        if (options?.isScheduled) {
+            displayMessage.role = "model";
+            displayMessage.content = `⏰ ${displayMessage.content}`;
+            displayMessage.timestamp = Date.now();
+        }
 
         if (injectedMemoryCount && injectedMemoryCount > 0) console.log(`[Chat] Injected ${injectedMemoryCount} memories into system prompt`);
         if (imageIds.length > 0) console.log("[Chat] Registered images:", imageIds);
@@ -357,7 +364,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         await sessions.selectChatById(targetChatId);
         setTimeout(async () => {
             if (handleSendRef.current) {
-                await handleSendRef.current(message);
+                await handleSendRef.current(message, { isScheduled: true });
             }
         }, 100);
     };
