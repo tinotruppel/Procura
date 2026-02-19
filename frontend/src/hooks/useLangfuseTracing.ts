@@ -42,7 +42,11 @@ export function useLangfuseTracing(messagesLength: number) {
                 setLangfuseConfig(config);
                 if (config.enabled && config.publicKey && config.secretKey) {
                     const remote = await fetchLangfusePromptList(config);
-                    setRemotePrompts(remote.map(p => ({ name: p.name })));
+                    const tags = config.tags?.filter(t => t.length > 0) ?? [];
+                    const filtered = tags.length > 0
+                        ? remote.filter(p => p.tags?.some(t => tags.includes(t)))
+                        : remote;
+                    setRemotePrompts(filtered.map(p => ({ name: p.name })));
                 } else {
                     setRemotePrompts([]);
                 }

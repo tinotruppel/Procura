@@ -1001,6 +1001,26 @@ export function Settings({ onBack }: SettingsProps) {
                                     />
                                 </div>
 
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">Prompt Tags (optional)</label>
+                                    <Input
+                                        type="text"
+                                        placeholder="e.g. production, procura"
+                                        value={(langfuseConfig.tags ?? []).join(", ")}
+                                        onChange={(e) => {
+                                            const raw = e.target.value;
+                                            const tags = raw.split(",").map(t => t.trim());
+                                            const updated = { ...langfuseConfig, tags };
+                                            setLangfuseConfigState(updated);
+                                            saveLangfuseConfig(updated);
+                                        }}
+                                        className="text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Comma-separated list. Only prompts with at least one matching tag will be shown.
+                                    </p>
+                                </div>
+
                                 <div className="flex items-center gap-3">
                                     <Button
                                         size="sm"

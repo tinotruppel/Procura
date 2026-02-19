@@ -193,6 +193,7 @@ export interface LangfuseConfig {
     publicKey: string;
     secretKey: string;
     host: string; // default: "https://cloud.langfuse.com"
+    tags?: string[]; // optional tag filter for prompt list
 }
 
 const DEFAULT_LANGFUSE_CONFIG: LangfuseConfig = {
