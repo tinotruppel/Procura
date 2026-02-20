@@ -61,6 +61,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [editingTitleValue, setEditingTitleValue] = useState("");
     const [pendingIntervention, setPendingIntervention] = useState<string[]>([]);
+    const pendingInterventionRef = useRef<string[]>([]);
     const [vaultUnlocked, setVaultUnlocked] = useState(isVaultUnlocked());
 
     // --- Refs ---
@@ -94,6 +95,7 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         abortControllerRef.current = null;
         setIsLoading(false);
         setPendingIntervention([]);
+        pendingInterventionRef.current = [];
     }, []);
 
     // --- Effects ---
@@ -133,6 +135,8 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         });
         return () => unsubscribe();
     }, [sessions.chatId]);
+
+    // --- Interventions are processed sequentially in the handleSend finally block ---
 
     // Handle deep links (extension via storage, PWA via props)
     const handleDeepLink = useCallback(async () => {
@@ -249,7 +253,12 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         if (!effectiveInput.trim() && attachments.pendingImages.length === 0 && attachments.pendingFiles.length === 0) return;
 
         if (isLoading) {
-            setPendingIntervention(prev => [...prev, effectiveInput.trim()]);
+            console.log(`[Chat] Queuing intervention: "${effectiveInput.trim()}"`);
+            setPendingIntervention(prev => {
+                const next = [...prev, effectiveInput.trim()];
+                pendingInterventionRef.current = next;
+                return next;
+            });
             if (!overrideInput) setInput("");
             return;
         }
@@ -281,8 +290,8 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
         if (imageIds.length > 0) console.log("[Chat] Registered images:", imageIds);
         if (registeredFiles.length > 0) console.log("[Chat] Registered files:", registeredFiles.map((file) => file.id));
 
-        const newDisplayMessages = [...sessions.messages, displayMessage];
-        const newLlmMessages = [...sessions.messages, llmMessage];
+        const newDisplayMessages = [...sessions.messagesRef.current, displayMessage];
+        const newLlmMessages = [...sessions.messagesRef.current, llmMessage];
 
         sessions.setMessages(newDisplayMessages);
         if (!overrideInput) setInput("");
@@ -338,11 +347,6 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
                 generateChatTitle(provider, apiKey, model, finalMessages, customBaseUrl);
             }
 
-            if (pendingIntervention.length > 0) {
-                const [next, ...rest] = pendingIntervention;
-                setPendingIntervention(rest);
-                setTimeout(() => { handleSend(next); }, 0);
-            }
         } catch (err) {
             if (isAbortedRef.current) return;
             if (requestGenRef.current !== thisGen) return;
@@ -350,7 +354,22 @@ export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
             // Keep pending interventions on error — they'll be sent after the next successful turn
         } finally {
             if (requestGenRef.current === thisGen) {
-                setIsLoading(false);
+                // Determine if we need to process an intervention BEFORE setting isLoading to false
+                // This prevents UI flicker and guarantees sequential execution
+                const queued = pendingInterventionRef.current;
+
+                if (queued.length > 0 && !isAbortedRef.current) {
+                    const [next, ...rest] = queued;
+                    pendingInterventionRef.current = rest;
+                    setPendingIntervention(rest);
+                    console.log(`[Chat] Sequential processing of queued intervention: "${next}", remaining: ${rest.length}`);
+                    // Trigger the next intervention asynchronously to let the current turn finish
+                    setTimeout(() => {
+                        handleSend(next);
+                    }, 50);
+                } else {
+                    setIsLoading(false);
+                }
                 abortControllerRef.current = null;
             }
             textareaRef.current?.focus();

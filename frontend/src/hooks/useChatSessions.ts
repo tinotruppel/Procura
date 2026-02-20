@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChatMessage } from "@/lib/llm-types";
 import {
     getChatSessions,
@@ -17,7 +17,17 @@ import { clearAnnotationState } from "@/tools/web-interaction";
 export function useChatSessions() {
     const [chatId, setChatId] = useState<string | null>(null);
     const [chatTitle, setChatTitle] = useState<string | null>(null);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [messages, setMessagesState] = useState<ChatMessage[]>([]);
+    const messagesRef = useRef<ChatMessage[]>([]);
+
+    const setMessages = (msgs: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+        setMessagesState(prev => {
+            const next = typeof msgs === "function" ? msgs(prev) : msgs;
+            messagesRef.current = next;
+            return next;
+        });
+    };
+
     const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
     const [isPinned, setIsPinned] = useState(false);
     const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
@@ -52,8 +62,8 @@ export function useChatSessions() {
 
     /** Create a new chat, saving the current one first. */
     const startNewChat = async (): Promise<string> => {
-        if (messages.length > 0) {
-            await saveCurrentChat(messages, chatTitle, selectedPromptId);
+        if (messagesRef.current.length > 0) {
+            await saveCurrentChat(messagesRef.current, chatTitle, selectedPromptId);
         }
         const newId = await createNewChat(selectedPromptId);
         setChatId(newId);
@@ -66,8 +76,8 @@ export function useChatSessions() {
 
     /** Switch to an existing chat session. Returns the loaded session or null. */
     const selectChat = async (session: ChatSession): Promise<ChatSession | null> => {
-        if (messages.length > 0) {
-            await saveCurrentChat(messages, chatTitle, selectedPromptId);
+        if (messagesRef.current.length > 0) {
+            await saveCurrentChat(messagesRef.current, chatTitle, selectedPromptId);
         }
         clearAnnotationState();
         const selected = await switchToChat(session.id);
@@ -91,8 +101,8 @@ export function useChatSessions() {
 
     /** Switch to an existing chat session by ID. Used by timer cross-chat handler. */
     const selectChatById = async (targetChatId: string): Promise<ChatSession | null> => {
-        if (messages.length > 0) {
-            await saveCurrentChat(messages, chatTitle, selectedPromptId);
+        if (messagesRef.current.length > 0) {
+            await saveCurrentChat(messagesRef.current, chatTitle, selectedPromptId);
         }
         clearAnnotationState();
         const selected = await switchToChat(targetChatId);
@@ -128,7 +138,7 @@ export function useChatSessions() {
 
     const saveChat = async (msgs?: ChatMessage[], title?: string | null) => {
         await saveCurrentChat(
-            msgs ?? messages,
+            msgs ?? messagesRef.current,
             title !== undefined ? title : chatTitle,
             selectedPromptId,
         );
@@ -138,17 +148,17 @@ export function useChatSessions() {
     const updatePromptId = async (newId: string | null) => {
         setSelectedPromptId(newId);
         await setSelectedSystemPromptId(newId);
-        await saveCurrentChat(messages, chatTitle, newId);
+        await saveCurrentChat(messagesRef.current, chatTitle, newId);
     };
 
     const exportAsMarkdown = () => {
-        exportChatAsMarkdown(messages, chatTitle || "Untitled Chat");
+        exportChatAsMarkdown(messagesRef.current, chatTitle || "Untitled Chat");
     };
 
     return {
         chatId, setChatId,
         chatTitle, setChatTitle,
-        messages, setMessages,
+        messages, setMessages, messagesRef,
         chatSessions,
         isPinned, setIsPinned,
         selectedPromptId, setSelectedPromptId,
