@@ -8,7 +8,7 @@ interface ChatInputProps {
     isLoading: boolean;
     pendingImages: string[];
     pendingFiles: AttachedFile[];
-    pendingIntervention: string | null;
+    pendingIntervention: string[];
     textareaRef: React.RefObject<HTMLTextAreaElement | null>;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     onInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
@@ -41,10 +41,10 @@ export function ChatInput({
     return (
         <>
             {/* Pending Intervention Indicator */}
-            {isLoading && pendingIntervention && (
+            {isLoading && pendingIntervention.length > 0 && (
                 <div className="mx-4 mb-2 flex items-center gap-2 text-muted-foreground text-sm">
                     <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
-                        Intervention queued
+                        Intervention queued{pendingIntervention.length > 1 ? ` (${pendingIntervention.length})` : ""}
                     </span>
                 </div>
             )}

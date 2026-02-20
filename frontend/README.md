@@ -371,7 +371,7 @@ You are my assistant. Run a comprehensive capabilities test in ONE response (use
 
 12) GitHub App Help:
 - Read and summarize the file:
-  tinotruppel / procura / frontend/README.md
+  tinotruppel / procura / frontend / README.md
 - Give me a short "How to use this app" section.
 
 13) CV Database:
@@ -397,7 +397,7 @@ You are my assistant. Run a comprehensive capabilities test in ONE response (use
 - Display the returned "origin" (IP) and "url" fields from the JSON response.
 
 18) Schedule Tool Test (short delay):
-- Schedule a message to be sent to me after 5 seconds.
+- Schedule a message to be sent to me after 1 minute.
 - The message should be: "Mega test schedule fired: if you see this, schedule works."
 - In the final "Test Coverage" section, note that the scheduled message will arrive shortly and should trigger a follow-up response.
 
