@@ -50,11 +50,17 @@ interface ChatProps {
         promptId: string | null;
         agentMsg: string | null;
     } | null;
+    initialInput?: string;
 }
 
-export function Chat({ onOpenSettings, deepLinkParams, onLogout }: ChatProps) {
+export function Chat({ onOpenSettings, deepLinkParams, initialInput, onLogout }: ChatProps) {
     // --- UI-only state ---
-    const [input, setInput] = useState("");
+    const [input, setInput] = useState(initialInput || "");
+
+    useEffect(() => {
+        if (initialInput) setInput(initialInput);
+    }, [initialInput]);
+
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [debugMode, setDebugMode] = useState(false);
