@@ -12,37 +12,68 @@ interface DeepLinkParams {
     agentMsg: string | null;
 }
 
+export interface SharedFileInfo {
+    name: string;
+    type: string;
+    size: number;
+    cacheKey: string;
+}
+
 function App() {
     const [view, setView] = useState<View>("chat");
     const [deepLinkParams, setDeepLinkParams] = useState<DeepLinkParams | null>(null);
     const [initialInput, setInitialInput] = useState<string>("");
+    const [sharedFiles, setSharedFiles] = useState<SharedFileInfo[]>([]);
     const [vaultReady, setVaultReady] = useState(false);
     const [vaultUnlocked, setVaultUnlocked] = useState(false);
 
-    // Handle deep link query params on startup (PWA fallback)
+    // Handle deep link and share target params on startup
     useEffect(() => {
         const urlObj = new URL(window.location.href);
-        const promptId = urlObj.searchParams.get("promptId");
-        const agentMsg = urlObj.searchParams.get("agentMsg");
+        const isShareTarget = urlObj.searchParams.has("share-target");
 
-        // PWA Web Share Target
-        const shareTitle = urlObj.searchParams.get("title");
-        const shareText = urlObj.searchParams.get("text");
-        const shareUrl = urlObj.searchParams.get("url");
+        if (isShareTarget) {
+            // POST-based share target: read from service worker cache
+            console.log("[PWA] Web Share Target (POST) detected, reading from cache...");
+            window.history.replaceState({}, "", "/");
 
-        if (shareTitle || shareText || shareUrl) {
-            console.log("[PWA] Web Share Target detected:", { shareTitle, shareText, shareUrl });
-            const parts = [];
-            if (shareTitle && shareTitle !== shareText) parts.push(shareTitle);
-            if (shareText) parts.push(shareText);
-            if (shareUrl && shareUrl !== shareText && shareUrl !== shareTitle) parts.push(shareUrl);
-            setInitialInput(parts.join("\n\n"));
-            window.history.replaceState({}, "", "/");
-        } else if (promptId || agentMsg) {
-            console.log("[PWA] Deep link params detected:", { promptId, agentMsg });
-            setDeepLinkParams({ promptId, agentMsg });
-            // Clean URL without reload
-            window.history.replaceState({}, "", "/");
+            (async () => {
+                try {
+                    const cache = await caches.open("share-target-cache");
+
+                    // Read text fields
+                    const textResponse = await cache.match(new Request("/_share-target/text"));
+                    if (textResponse) {
+                        const textData = await textResponse.json();
+                        const parts: string[] = [];
+                        if (textData.title && textData.title !== textData.text) parts.push(textData.title);
+                        if (textData.text) parts.push(textData.text);
+                        if (textData.url && textData.url !== textData.text && textData.url !== textData.title) parts.push(textData.url);
+                        if (parts.length > 0) setInitialInput(parts.join("\n\n"));
+                    }
+
+                    // Read file manifest
+                    const manifestResponse = await cache.match(new Request("/_share-target/manifest"));
+                    if (manifestResponse) {
+                        const fileList: SharedFileInfo[] = await manifestResponse.json();
+                        if (fileList.length > 0) {
+                            console.log(`[PWA] Share target: ${fileList.length} file(s) received`);
+                            setSharedFiles(fileList);
+                        }
+                    }
+                } catch (err) {
+                    console.error("[PWA] Failed to read share target cache:", err);
+                }
+            })();
+        } else {
+            // Standard deep link params
+            const promptId = urlObj.searchParams.get("promptId");
+            const agentMsg = urlObj.searchParams.get("agentMsg");
+            if (promptId || agentMsg) {
+                console.log("[PWA] Deep link params detected:", { promptId, agentMsg });
+                setDeepLinkParams({ promptId, agentMsg });
+                window.history.replaceState({}, "", "/");
+            }
         }
     }, []);
 
@@ -74,6 +105,7 @@ function App() {
                     onOpenSettings={() => setView("settings")}
                     deepLinkParams={deepLinkParams}
                     initialInput={initialInput}
+                    sharedFiles={sharedFiles}
                     onLogout={() => setVaultUnlocked(false)}
                 />
             ) : (

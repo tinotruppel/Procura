@@ -43,6 +43,9 @@ import { isVaultUnlocked, lockVault, restoreVaultFromSession } from "@/lib/vault
 import { onTimerFire } from "@/lib/timer-manager";
 
 
+import { SharedFileInfo } from "@/App";
+import { isImageMimeType } from "@/lib/file-store";
+
 interface ChatProps {
     onOpenSettings: () => void;
     onLogout?: () => void;
@@ -51,9 +54,19 @@ interface ChatProps {
         agentMsg: string | null;
     } | null;
     initialInput?: string;
+    sharedFiles?: SharedFileInfo[];
 }
 
-export function Chat({ onOpenSettings, deepLinkParams, initialInput, onLogout }: ChatProps) {
+function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles, onLogout }: ChatProps) {
     // --- UI-only state ---
     const [input, setInput] = useState(initialInput || "");
 
@@ -93,6 +106,44 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, onLogout }:
         attachments.setPendingImages,
         attachments.setPendingFiles,
     );
+
+    // Process shared files from Web Share Target
+    useEffect(() => {
+        if (!sharedFiles || sharedFiles.length === 0) return;
+
+        async function processSharedFiles() {
+            try {
+                const cache = await caches.open("share-target-cache");
+
+                for (const fileMeta of sharedFiles!) {
+                    const response = await cache.match(new Request(fileMeta.cacheKey));
+                    if (!response) continue;
+
+                    const blob = await response.blob();
+                    const dataUrl = await blobToDataUrl(blob);
+
+                    if (isImageMimeType(fileMeta.type)) {
+                        attachments.setPendingImages(prev => [...prev, dataUrl]);
+                    } else {
+                        attachments.setPendingFiles(prev => [...prev, {
+                            id: '',
+                            fileName: fileMeta.name,
+                            mimeType: fileMeta.type,
+                            fileSize: fileMeta.size,
+                            dataUrl,
+                        }]);
+                    }
+                }
+
+                await caches.delete("share-target-cache");
+                console.log("[Chat] Processed shared files from Web Share Target");
+            } catch (err) {
+                console.error("[Chat] Failed to process shared files:", err);
+            }
+        }
+
+        processSharedFiles();
+    }, [sharedFiles]);
 
     // --- Stream lifecycle ---
     const stopCurrentStream = useCallback(() => {

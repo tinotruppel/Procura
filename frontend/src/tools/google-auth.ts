@@ -97,6 +97,9 @@ async function getTokenViaExtension(
         authUrl.searchParams.set("response_type", "token");
         authUrl.searchParams.set("scope", scopeKey);
 
+        console.log(`[Google OAuth] Raw Extension Redirect URL: ${redirectUrl}`);
+        console.log(`[Google OAuth] Full Auth URL Launching: ${authUrl.toString()}`);
+
         const responseUrl = await chrome.identity.launchWebAuthFlow({
             url: authUrl.toString(),
             interactive,

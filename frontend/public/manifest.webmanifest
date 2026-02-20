@@ -40,13 +40,24 @@
         "utilities"
     ],
     "share_target": {
-        "action": "/",
-        "method": "GET",
-        "enctype": "application/x-www-form-urlencoded",
+        "action": "/_share-target",
+        "method": "POST",
+        "enctype": "multipart/form-data",
         "params": {
             "title": "title",
             "text": "text",
-            "url": "url"
+            "url": "url",
+            "files": [
+                {
+                    "name": "media",
+                    "accept": [
+                        "image/*",
+                        "application/pdf",
+                        "text/*",
+                        "application/json"
+                    ]
+                }
+            ]
         }
     }
 }
