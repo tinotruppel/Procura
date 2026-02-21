@@ -34,6 +34,8 @@ const GoogleScopes = {
     DOCUMENTS: "https://www.googleapis.com/auth/documents",
     // Google Sheets
     SPREADSHEETS: "https://www.googleapis.com/auth/spreadsheets",
+    // Google Slides
+    PRESENTATIONS: "https://www.googleapis.com/auth/presentations",
     // Google Drive
     DRIVE_FILE: "https://www.googleapis.com/auth/drive.file",
     DRIVE_METADATA: "https://www.googleapis.com/auth/drive.metadata",
@@ -45,8 +47,9 @@ const GoogleScopes = {
 export const ScopeSets = {
     DOCS: [GoogleScopes.DOCUMENTS, GoogleScopes.DRIVE_FILE, GoogleScopes.DRIVE_METADATA],
     SHEETS: [GoogleScopes.SPREADSHEETS, GoogleScopes.DRIVE_FILE, GoogleScopes.DRIVE_METADATA],
-    // All scopes for tools that need both
-    ALL: [GoogleScopes.DOCUMENTS, GoogleScopes.SPREADSHEETS, GoogleScopes.DRIVE_FILE, GoogleScopes.DRIVE_METADATA],
+    SLIDES: [GoogleScopes.PRESENTATIONS, GoogleScopes.DRIVE_FILE, GoogleScopes.DRIVE_METADATA],
+    // All scopes for tools that need multiple
+    ALL: [GoogleScopes.DOCUMENTS, GoogleScopes.SPREADSHEETS, GoogleScopes.PRESENTATIONS, GoogleScopes.DRIVE_FILE, GoogleScopes.DRIVE_METADATA],
 } as const;
 
 /**
