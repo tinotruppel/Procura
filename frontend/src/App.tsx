@@ -24,6 +24,7 @@ function App() {
     const [deepLinkParams, setDeepLinkParams] = useState<DeepLinkParams | null>(null);
     const [initialInput, setInitialInput] = useState<string>("");
     const [sharedFiles, setSharedFiles] = useState<SharedFileInfo[]>([]);
+    const [forceNewChat, setForceNewChat] = useState(false);
     const [vaultReady, setVaultReady] = useState(false);
     const [vaultUnlocked, setVaultUnlocked] = useState(false);
 
@@ -50,6 +51,7 @@ function App() {
                         if (textData.text) parts.push(textData.text);
                         if (textData.url && textData.url !== textData.text && textData.url !== textData.title) parts.push(textData.url);
                         if (parts.length > 0) setInitialInput(parts.join("\n\n"));
+                        setForceNewChat(true);
                     }
 
                     // Read file manifest
@@ -59,6 +61,7 @@ function App() {
                         if (fileList.length > 0) {
                             console.log(`[PWA] Share target: ${fileList.length} file(s) received`);
                             setSharedFiles(fileList);
+                            setForceNewChat(true);
                         }
                     }
                 } catch (err) {
@@ -106,6 +109,7 @@ function App() {
                     deepLinkParams={deepLinkParams}
                     initialInput={initialInput}
                     sharedFiles={sharedFiles}
+                    forceNewChat={forceNewChat}
                     onLogout={() => setVaultUnlocked(false)}
                 />
             ) : (

@@ -55,6 +55,7 @@ interface ChatProps {
     } | null;
     initialInput?: string;
     sharedFiles?: SharedFileInfo[];
+    forceNewChat?: boolean;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -66,7 +67,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     });
 }
 
-export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles, onLogout }: ChatProps) {
+export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles, forceNewChat, onLogout }: ChatProps) {
     // --- UI-only state ---
     const [input, setInput] = useState(initialInput || "");
 
@@ -106,6 +107,14 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
         attachments.setPendingImages,
         attachments.setPendingFiles,
     );
+
+    // Force a new chat session when content is shared via Web Share Target
+    useEffect(() => {
+        if (!forceNewChat) return;
+        sessions.startNewChat().then(() => {
+            if (initialInput) setInput(initialInput);
+        });
+    }, [forceNewChat]);
 
     // Process shared files from Web Share Target
     useEffect(() => {
