@@ -51,6 +51,7 @@ import {
     Theme,
 } from "@/lib/storage";
 import { fetchCustomModels } from "@/lib/custom-openai";
+import { fetchModelsForProvider, clearModelCache, type ModelOption } from "@/lib/model-fetcher";
 import { testLangfuseConnection } from "@/lib/langfuse";
 import { allTools, ToolConfigMap } from "@/tools";
 import { platform } from "@/platform";
@@ -312,6 +313,9 @@ export function Settings({ onBack }: SettingsProps) {
     const [customModelsLoading, setCustomModelsLoading] = useState(false);
     const [customModelsError, setCustomModelsError] = useState<string | null>(null);
     const [mcpRefreshKey, setMcpRefreshKey] = useState(0);
+    // Dynamic model list state (fetched from provider APIs)
+    const [dynamicModels, setDynamicModels] = useState<ModelOption[]>([]);
+    const [modelsLoading, setModelsLoading] = useState(false);
 
     const loadSettings = useCallback(async () => {
         const storedProvider = await getProvider();
@@ -363,6 +367,7 @@ export function Settings({ onBack }: SettingsProps) {
     const updateApiKey = (p: LLMProvider, key: string) => {
         const updated = { ...apiKeys, [p]: key };
         setApiKeysState(updated);
+        clearModelCache(p);
         saveApiKeys(updated).then(
             () => setApiKeyError(null),
             () => setApiKeyError("Vault is locked. Enter your security key in Sync Settings.")
@@ -375,15 +380,37 @@ export function Settings({ onBack }: SettingsProps) {
         saveModels(updated);
     };
 
-    // Helper to get models for current provider
+    // Helper to get models for current provider (dynamic with fallback)
     const getModelsForProvider = (p: LLMProvider) => {
         switch (p) {
-            case "gemini": return GEMINI_MODELS;
-            case "claude": return CLAUDE_MODELS;
-            case "openai": return OPENAI_MODELS;
+            case "gemini": return dynamicModels.length > 0 ? dynamicModels : GEMINI_MODELS;
+            case "claude": return dynamicModels.length > 0 ? dynamicModels : CLAUDE_MODELS;
+            case "openai": return dynamicModels.length > 0 ? dynamicModels : OPENAI_MODELS;
             case "custom": return customModels;
         }
     };
+
+    // Fetch dynamic models when provider or API key changes
+    useEffect(() => {
+        if (provider === "custom") {
+            setDynamicModels([]);
+            return;
+        }
+        const key = apiKeys[provider];
+        if (!key) {
+            setDynamicModels([]);
+            return;
+        }
+        let cancelled = false;
+        setModelsLoading(true);
+        fetchModelsForProvider(provider, key).then(({ models: fetched }) => {
+            if (!cancelled) {
+                setDynamicModels(fetched);
+                setModelsLoading(false);
+            }
+        });
+        return () => { cancelled = true; };
+    }, [provider, apiKeys]);
 
     // Helper to get API key link for provider
     const getApiKeyLink = (p: LLMProvider) => {
@@ -679,9 +706,10 @@ export function Settings({ onBack }: SettingsProps) {
                                 <Select
                                     value={models[provider]}
                                     onValueChange={(v) => updateModel(provider, v)}
+                                    disabled={modelsLoading}
                                 >
                                     <SelectTrigger>
-                                        <SelectValue placeholder="Select model..." />
+                                        <SelectValue placeholder={modelsLoading ? "Loading models…" : "Select model..."} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {getModelsForProvider(provider).map((model) => (

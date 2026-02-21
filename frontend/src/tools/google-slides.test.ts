@@ -173,6 +173,35 @@ describe("googleSlidesTool", () => {
             expect(result.success).toBe(false);
             expect(result.error).toContain("presentationId is required");
         });
+
+        it("should summarize table and unknown elements", async () => {
+            mockFetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({
+                    presentationId: "pres-tables",
+                    title: "Tables Test",
+                    slides: [{
+                        objectId: "slide1",
+                        pageElements: [
+                            { objectId: "tbl1", table: { rows: 3, columns: 4 } },
+                            { objectId: "vid1", video: { source: "YOUTUBE" } },
+                        ],
+                    }],
+                }),
+            });
+
+            const result = await googleSlidesTool.execute(
+                { operation: "get_presentation", presentationId: "pres-tables" },
+                mockConfig
+            );
+
+            expect(result.success).toBe(true);
+            const elements = getData(result).slides[0].elements;
+            expect(elements[0].type).toBe("table");
+            expect(elements[0].rows).toBe(3);
+            expect(elements[0].columns).toBe(4);
+            expect(elements[1].type).toBe("unknown");
+        });
     });
 
     describe("create_presentation", () => {
@@ -250,6 +279,24 @@ describe("googleSlidesTool", () => {
             expect(result.success).toBe(false);
             expect(result.error).toContain("presentationId is required");
         });
+
+        it("should add slide with layoutId", async () => {
+            mockFetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({
+                    replies: [{ createSlide: { objectId: "new-slide" } }],
+                }),
+            });
+
+            const result = await googleSlidesTool.execute(
+                { operation: "add_slide", presentationId: "pres123", layoutId: "TITLE_SLIDE" },
+                mockConfig
+            );
+
+            expect(result.success).toBe(true);
+            const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+            expect(body.requests[0].createSlide.slideLayoutReference.layoutId).toBe("TITLE_SLIDE");
+        });
     });
 
     describe("add_text", () => {
@@ -284,6 +331,22 @@ describe("googleSlidesTool", () => {
             );
             expect(result.success).toBe(false);
             expect(result.error).toContain("text is required");
+        });
+
+        it("should insert text at specific index", async () => {
+            mockFetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve({ replies: [{}] }),
+            });
+
+            const result = await googleSlidesTool.execute(
+                { operation: "add_text", presentationId: "pres123", objectId: "shape1", text: "Hi", insertionIndex: 5 },
+                mockConfig
+            );
+
+            expect(result.success).toBe(true);
+            const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+            expect(body.requests[0].insertText.insertionIndex).toBe(5);
         });
     });
 
