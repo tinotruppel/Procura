@@ -3,17 +3,18 @@
  * Loads settings from environment variables
  */
 
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || ".env" });
 import { z } from "zod";
 
 const configSchema = z.object({
-    // Database
+    // Database (optional when DB_DRIVER=sqlite)
     db: z.object({
         host: z.string().default("localhost"),
         port: z.coerce.number().default(3306),
-        name: z.string(),
-        user: z.string(),
-        password: z.string(),
+        name: z.string().default("procura"),
+        user: z.string().default("root"),
+        password: z.string().default(""),
     }),
 
     // Server

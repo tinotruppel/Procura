@@ -16,7 +16,7 @@ function timingSafeCompare(a: string, b: string): boolean {
 }
 
 /**
- * Validates API key from Authorization header.
+ * Validates API key from X-API-Key header.
  * Returns true if valid or if no API keys are configured (open mode).
  */
 export function validateApiKey(c: Context): boolean {
@@ -27,14 +27,10 @@ export function validateApiKey(c: Context): boolean {
         return true;
     }
 
-    // Get API key from Authorization header: "Bearer <key>"
-    const authHeader = c.req.header("Authorization") || "";
-    const prefix = "Bearer ";
-    if (authHeader.toLowerCase().startsWith(prefix.toLowerCase())) {
-        const providedKey = authHeader.slice(prefix.length).trim();
-        if (providedKey) {
-            return config.apiKeys.some(key => timingSafeCompare(key, providedKey));
-        }
+    // Get API key from X-API-Key header
+    const providedKey = c.req.header("X-API-Key") || "";
+    if (providedKey) {
+        return config.apiKeys.some(key => timingSafeCompare(key, providedKey));
     }
 
     return false;

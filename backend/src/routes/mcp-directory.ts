@@ -68,6 +68,24 @@ export const MCP_SERVERS: McpServerEntry[] = [
         endpoint: "/mcp/image-generation",
         description: "AI image generation via Google Imagen",
     },
+    {
+        name: "google-docs",
+        title: "Google Docs",
+        endpoint: "/mcp/google-docs",
+        description: "Read, create, and edit Google Docs documents with markdown formatting",
+    },
+    {
+        name: "google-sheets",
+        title: "Google Sheets",
+        endpoint: "/mcp/google-sheets",
+        description: "Manage Google Sheets spreadsheets (read, write, append, broadcast fill)",
+    },
+    {
+        name: "google-slides",
+        title: "Google Slides",
+        endpoint: "/mcp/google-slides",
+        description: "Manage Google Slides presentations (slides, text, images, find & replace)",
+    },
 ];
 
 // =============================================================================

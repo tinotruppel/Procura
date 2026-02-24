@@ -12,7 +12,7 @@ export function createCorsMiddleware(): MiddlewareHandler {
     return cors({
         origin: config.corsOrigin === "*" ? "*" : config.corsOrigin.split(","),
         allowMethods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
-        allowHeaders: ["Content-Type", "Authorization", "X-MCP-Target-URL"],
+        allowHeaders: ["Content-Type", "Authorization", "X-Api-Key", "X-MCP-Target-URL"],
         exposeHeaders: ["Mcp-Session-Id"],
     });
 }

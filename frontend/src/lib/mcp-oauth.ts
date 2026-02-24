@@ -263,8 +263,8 @@ async function startOAuthFlow(
     const codeChallenge = await generateCodeChallenge(codeVerifier);
     const state = generateState();
 
-    // Build redirect URI (use extension URL)
-    const redirectUri = chrome.identity.getRedirectURL("oauth");
+    // Build redirect URI
+    const redirectUri = `${window.location.origin}/oauth/callback`;
     console.log("[OAuth] Redirect URI:", redirectUri);
 
     // Dynamic Client Registration if endpoint available
@@ -277,8 +277,8 @@ async function startOAuthFlow(
         );
         clientId = registration.client_id;
     } else {
-        // Fallback to extension URL as client_id
-        clientId = `https://${chrome.runtime.id}.chromiumapp.org/`;
+        // Fallback client_id
+        clientId = window.location.origin;
     }
     console.log("[OAuth] Using client_id:", clientId);
 
@@ -358,8 +358,8 @@ async function completeOAuthFlow(
 }
 
 /**
- * Launch OAuth flow using chrome.identity.launchWebAuthFlow
- * This opens a popup for the user to authenticate
+ * Launch OAuth flow using window.open popup.
+ * Works in both Extension and PWA contexts.
  */
 export async function launchOAuthPopup(
     serverUrl: string,
@@ -369,51 +369,49 @@ export async function launchOAuthPopup(
 ): Promise<string> {
     console.log("[OAuth] launchOAuthPopup called");
     const authUrl = await startOAuthFlow(serverUrl, metadataUrl, scope, useDirectAuthServer);
-    console.log("[OAuth] Launching web auth flow with URL:", authUrl);
+    console.log("[OAuth] Auth URL:", authUrl);
 
     return new Promise((resolve, reject) => {
-        console.log("[OAuth] Calling chrome.identity.launchWebAuthFlow");
-        chrome.identity.launchWebAuthFlow(
-            {
-                url: authUrl,
-                interactive: true,
-            },
-            async (responseUrl) => {
-                console.log("[OAuth] launchWebAuthFlow callback", { responseUrl, lastError: chrome.runtime.lastError });
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                    return;
-                }
-
-                if (!responseUrl) {
-                    reject(new Error("No response URL received"));
-                    return;
-                }
-
-                try {
-                    // Parse the response URL
-                    const url = new URL(responseUrl);
-                    const code = url.searchParams.get("code");
-                    const state = url.searchParams.get("state");
-                    const error = url.searchParams.get("error");
-
-                    if (error) {
-                        reject(new Error(`OAuth error: ${error}`));
-                        return;
-                    }
-
-                    if (!code || !state) {
-                        reject(new Error("Missing code or state in response"));
-                        return;
-                    }
-
-                    // Exchange code for tokens
-                    const result = await completeOAuthFlow(code, state);
-                    resolve(result.accessToken);
-                } catch (e) {
-                    reject(e);
-                }
-            }
+        const width = 500, height = 700;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+        const popup = window.open(
+            authUrl,
+            "oauth-popup",
+            `width=${width},height=${height},left=${left},top=${top}`
         );
+
+        if (!popup) {
+            reject(new Error("Failed to open popup — check popup blocker"));
+            return;
+        }
+
+        // Listen for postMessage from the backend callback page
+        const onMessage = async (event: MessageEvent) => {
+            if (event.data?.type !== "oauth-callback") return;
+            cleanup();
+            try {
+                const { code, state } = event.data as { code: string; state: string };
+                const result = await completeOAuthFlow(code, state);
+                resolve(result.accessToken);
+            } catch (e) {
+                reject(e);
+            }
+        };
+
+        // Monitor popup close (user cancelled)
+        const closeCheck = setInterval(() => {
+            if (popup.closed) {
+                cleanup();
+                reject(new Error("OAuth popup closed by user"));
+            }
+        }, 500);
+
+        const cleanup = () => {
+            window.removeEventListener("message", onMessage);
+            clearInterval(closeCheck);
+        };
+
+        window.addEventListener("message", onMessage);
     });
 }

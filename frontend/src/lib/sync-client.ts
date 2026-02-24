@@ -151,7 +151,7 @@ export class SyncClient {
     }
 
     /**
-     * Get headers for requests (includes Authorization if apiKey is set)
+     * Get headers for requests (includes X-API-Key if apiKey is set)
      */
     private getHeaders(contentType?: string): Record<string, string> {
         const headers: Record<string, string> = {};
@@ -159,7 +159,7 @@ export class SyncClient {
             headers['Content-Type'] = contentType;
         }
         if (this.apiKey) {
-            headers['Authorization'] = `Bearer ${this.apiKey}`;
+            headers['X-API-Key'] = this.apiKey;
         }
         return headers;
     }

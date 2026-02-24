@@ -18,3 +18,16 @@ CREATE TABLE IF NOT EXISTS sync_objects (
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    user_id        VARCHAR(255)  NOT NULL,
+    provider       VARCHAR(64)   NOT NULL,
+    session_token  VARCHAR(36)   NOT NULL,
+    refresh_token  TEXT          NOT NULL,
+    created_at     BIGINT        NOT NULL,
+    updated_at     BIGINT        NOT NULL,
+    PRIMARY KEY (user_id, provider),
+    UNIQUE INDEX idx_session_token (session_token)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;

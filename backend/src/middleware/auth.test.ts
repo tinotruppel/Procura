@@ -16,11 +16,11 @@ vi.mock("../config", () => ({
 import { validateApiKey, authMiddleware } from "./auth";
 
 // Helper to create a minimal Hono Context mock
-function createMockContext(authHeader?: string) {
+function createMockContext(apiKey?: string) {
     return {
         req: {
             header: (name: string) => {
-                if (name === "Authorization") return authHeader || "";
+                if (name === "X-API-Key") return apiKey || "";
                 return "";
             },
         },
@@ -38,51 +38,39 @@ describe("validateApiKey", () => {
         expect(validateApiKey(c)).toBe(true);
     });
 
-    it("rejects requests without Authorization header", () => {
+    it("rejects requests without X-API-Key header", () => {
         mockConfig.apiKeys = ["test-key-123"];
         const c = createMockContext();
         expect(validateApiKey(c)).toBe(false);
     });
 
-    it("rejects requests with invalid Authorization format", () => {
-        mockConfig.apiKeys = ["test-key-123"];
-        const c = createMockContext("Basic dXNlcjpwYXNz");
-        expect(validateApiKey(c)).toBe(false);
-    });
-
     it("rejects requests with wrong API key", () => {
         mockConfig.apiKeys = ["correct-key"];
-        const c = createMockContext("Bearer wrong-key");
+        const c = createMockContext("wrong-key");
         expect(validateApiKey(c)).toBe(false);
     });
 
     it("accepts requests with valid API key", () => {
         mockConfig.apiKeys = ["valid-key-abc"];
-        const c = createMockContext("Bearer valid-key-abc");
+        const c = createMockContext("valid-key-abc");
         expect(validateApiKey(c)).toBe(true);
     });
 
     it("accepts requests matching any configured key", () => {
         mockConfig.apiKeys = ["key-1", "key-2", "key-3"];
-        const c = createMockContext("Bearer key-2");
-        expect(validateApiKey(c)).toBe(true);
-    });
-
-    it("is case-insensitive for Bearer prefix", () => {
-        mockConfig.apiKeys = ["my-key"];
-        const c = createMockContext("bearer my-key");
+        const c = createMockContext("key-2");
         expect(validateApiKey(c)).toBe(true);
     });
 
     it("rejects partial key matches (key must match exactly)", () => {
         mockConfig.apiKeys = ["full-key-value"];
-        const c = createMockContext("Bearer full-key");
+        const c = createMockContext("full-key");
         expect(validateApiKey(c)).toBe(false);
     });
 
     it("rejects keys that contain the correct key as substring", () => {
         mockConfig.apiKeys = ["secret"];
-        const c = createMockContext("Bearer secret-extra");
+        const c = createMockContext("secret-extra");
         expect(validateApiKey(c)).toBe(false);
     });
 });

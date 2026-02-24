@@ -434,7 +434,7 @@ describe("MCP Client", () => {
 
             // Verify proxy headers
             const proxyHeaders = mockFetch.mock.calls[0][1].headers;
-            expect(proxyHeaders["Authorization"]).toBe("Bearer proxy-key");
+            expect(proxyHeaders["X-API-Key"]).toBe("proxy-key");
             expect(proxyHeaders["Content-Type"]).toBe("application/json");
 
             // Verify proxy body contains targetUrl and MCP headers

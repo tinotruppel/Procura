@@ -169,7 +169,7 @@ async function sendMcpFetch(
         };
 
         if (proxyConfig.apiKey) {
-            proxyHeaders["Authorization"] = `Bearer ${proxyConfig.apiKey}`;
+            proxyHeaders["X-API-Key"] = proxyConfig.apiKey;
         }
 
         return fetch(proxyConfig.url, {

@@ -30,6 +30,9 @@ describe("MCP Directory", () => {
         expect(serverNames).toContain("document-media");
         expect(serverNames).toContain("github");
         expect(serverNames).toContain("image-generation");
+        expect(serverNames).toContain("google-docs");
+        expect(serverNames).toContain("google-sheets");
+        expect(serverNames).toContain("google-slides");
     });
 
     it("should have valid fields for every server entry", async () => {
@@ -54,6 +57,6 @@ describe("MCP Directory", () => {
 
     it("should export MCP_SERVERS for reuse", () => {
         expect(Array.isArray(MCP_SERVERS)).toBe(true);
-        expect(MCP_SERVERS.length).toBe(7);
+        expect(MCP_SERVERS.length).toBe(10);
     });
 });

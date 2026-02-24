@@ -4,6 +4,9 @@ import { resolve } from "path";
 export default defineConfig({
     test: {
         globals: true,
+        env: {
+            DOTENV_CONFIG_PATH: ".env.local",
+        },
         coverage: {
             provider: "v8",
             reporter: ["text", "html"],

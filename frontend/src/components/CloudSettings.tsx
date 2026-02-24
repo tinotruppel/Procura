@@ -72,7 +72,7 @@ async function fetchMcpDirectory(
 ): Promise<McpDirectoryEntry[]> {
     const url = getCloudDirectoryUrl(baseUrl);
     const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { "X-API-Key": apiKey },
     });
     if (!res.ok) {
         throw new Error(`Directory fetch failed: ${res.status}`);
@@ -120,7 +120,7 @@ async function fetchHealth(
 ): Promise<{ status: string; services: string[] }> {
     const cleanBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     const res = await fetch(`${cleanBase}/health`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { "X-API-Key": apiKey },
         signal: AbortSignal.timeout(5000),
     });
     return (await res.json()) as { status: string; services: string[] };

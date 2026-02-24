@@ -1,16 +1,59 @@
 /**
  * Database Connection Pool
- * MySQL2 with typed queries
+ * Supports MySQL (production) and SQLite in-memory (dev).
+ *
+ * Set DB_DRIVER=sqlite in .env.local for local development — no external DB required.
+ * MySQL is the default for production.
  */
 
 import mysql from "mysql2/promise";
-import type { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 import { getConfig } from "../config";
 
-let pool: Pool | null = null;
+// Unified pool interface (subset used by the app)
+export interface DbPool {
+    execute<T extends RowDataPacket[] | ResultSetHeader>(
+        sql: string,
+        params?: unknown[]
+    ): Promise<[T, unknown]>;
+    query(sql: string): Promise<[unknown[], unknown]>;
+    end(): Promise<void>;
+}
 
-export function getPool(): Pool {
+// ---------- Pool (lazy-initialized) ----------
+
+let pool: DbPool | null = null;
+let initPromise: Promise<void> | null = null;
+
+async function initSqlitePool(): Promise<void> {
+    const { createSqlitePool } = await import("./sqlite-pool.js");
+    let schema: string | undefined;
+    try {
+        schema = readFileSync(resolve(process.cwd(), "schema.sql"), "utf-8");
+    } catch { /* no schema file found */ }
+    pool = createSqlitePool(schema);
+}
+
+// ---------- Public API ----------
+
+/**
+ * Initialize the database pool. Must be called once at startup.
+ * For MySQL this is a no-op (pool created lazily). For SQLite this loads the driver.
+ */
+export async function initPool(): Promise<void> {
+    if (process.env.DB_DRIVER === "sqlite" && !pool) {
+        if (!initPromise) initPromise = initSqlitePool();
+        await initPromise;
+    }
+}
+
+export function getPool(): DbPool {
     if (!pool) {
+        if (process.env.DB_DRIVER === "sqlite") {
+            throw new Error("SQLite pool not initialized. Call initPool() first.");
+        }
         const config = getConfig();
         pool = mysql.createPool({
             host: config.db.host,
@@ -22,7 +65,7 @@ export function getPool(): Pool {
             waitForConnections: true,
             connectionLimit: 10,
             queueLimit: 0,
-        });
+        }) as unknown as DbPool;
     }
     return pool;
 }

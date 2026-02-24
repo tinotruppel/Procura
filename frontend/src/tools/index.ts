@@ -5,9 +5,6 @@ import { httpRequestTool } from "./http-request";
 import { geolocationTool } from "./geolocation";
 import { datetimeTool } from "./datetime";
 import { fileParserTool } from "./file-parser";
-import { googleDocsTool } from "./google-docs";
-import { googleSheetsTool } from "./google-sheets";
-import { googleSlidesTool } from "./google-slides";
 import { memoryTool } from "./memory";
 import { readPageTool } from "./read-page";
 import { annotatePageTool, clickElementTool, typeTextTool, navigateToTool } from "./web-interaction";
@@ -23,9 +20,6 @@ export const allTools: Tool[] = [
     geolocationTool,
     datetimeTool,
     fileParserTool,
-    googleDocsTool,
-    googleSheetsTool,
-    googleSlidesTool,
     memoryTool,
     readPageTool,
     annotatePageTool,
@@ -51,9 +45,6 @@ export { httpRequestTool } from "./http-request";
 export { geolocationTool } from "./geolocation";
 export { datetimeTool } from "./datetime";
 export { fileParserTool } from "./file-parser";
-export { googleDocsTool } from "./google-docs";
-export { googleSheetsTool } from "./google-sheets";
-export { googleSlidesTool } from "./google-slides";
 export { memoryTool } from "./memory";
 export { readPageTool } from "./read-page";
 export { annotatePageTool, clickElementTool, typeTextTool, navigateToTool } from "./web-interaction";

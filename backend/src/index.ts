@@ -16,6 +16,9 @@
  *   GET    /mcp/document-media        - Document/Media MCP server (OCR, transcription)
  *   GET    /mcp/github                - GitHub MCP server (read-only)
  *   GET    /mcp/image-generation       - Image Generation MCP server (Imagen AI)
+ *   GET    /mcp/google-docs            - Google Docs MCP server
+ *   GET    /mcp/google-sheets          - Google Sheets MCP server
+ *   GET    /mcp/google-slides          - Google Slides MCP server
  */
 
 import { Hono } from "hono";
@@ -31,6 +34,10 @@ import { knowledgeBaseMcpRoutes } from "./routes/knowledge-base-mcp";
 import { documentMediaMcpRoutes } from "./routes/document-media-mcp";
 import { githubMcpRoutes } from "./routes/github-mcp";
 import { imageGenerationMcpRoutes } from "./routes/image-generation-mcp";
+import { googleDocsMcpRoutes } from "./routes/google-docs-mcp";
+import { googleSheetsMcpRoutes } from "./routes/google-sheets-mcp";
+import { googleSlidesMcpRoutes } from "./routes/google-slides-mcp";
+import { googleOAuthRoutes } from "./routes/google-oauth";
 import { mcpDirectoryRoutes } from "./routes/mcp-directory";
 import { getConfig } from "./config";
 import { getPool } from "./db/connection";
@@ -47,6 +54,10 @@ app.use("/sync/*", authMiddleware);
 app.use("/mcp-proxy/*", authMiddleware);
 app.use("/mcp-directory/*", authMiddleware);
 app.use("/mcp/*", authMiddleware);
+app.use("/auth/google/status", authMiddleware);
+app.use("/auth/google/disconnect", authMiddleware);
+// Note: /auth/google/callback is NOT auth-protected — Google redirects users there
+// Note: /.well-known/*, /authorize, /token, /register are NOT auth-protected — OAuth flow endpoints
 
 // Mount routes
 app.route("/sync", syncRoutes);
@@ -60,6 +71,11 @@ app.route("/mcp/knowledge-base", knowledgeBaseMcpRoutes);
 app.route("/mcp/document-media", documentMediaMcpRoutes);
 app.route("/mcp/github", githubMcpRoutes);
 app.route("/mcp/image-generation", imageGenerationMcpRoutes);
+app.route("/mcp/google-docs", googleDocsMcpRoutes);
+app.route("/mcp/google-sheets", googleSheetsMcpRoutes);
+app.route("/mcp/google-slides", googleSlidesMcpRoutes);
+// OAuth AS: mount at root so endpoints are at /.well-known/*, /authorize, /token, /register, /auth/google/*
+app.route("/", googleOAuthRoutes);
 
 // Health check with database connection test and service listing
 app.get("/health", async (c) => {
@@ -101,10 +117,14 @@ const port = (() => {
 
 // Always start the server (Phusion Passenger requires this)
 if (!process.env.VITEST && process.env.NODE_ENV !== "test") {
-    import("@hono/node-server").then(({ serve }) => {
-        serve({ fetch: app.fetch, port });
-        console.log(`🚀 Server running on port ${port} (Node.js)`);
-    }).catch((err) => {
-        console.error("Failed to start server:", err);
-    });
+    import("./db/connection.js")
+        .then(({ initPool }) => initPool())
+        .then(() => import("@hono/node-server"))
+        .then(({ serve }) => {
+            serve({ fetch: app.fetch, port });
+            console.log(`🚀 Server running on port ${port} (Node.js)`);
+        })
+        .catch((err) => {
+            console.error("Failed to start server:", err);
+        });
 }

@@ -28,8 +28,10 @@ mcpProxyRoutes.post("/", async (c) => {
 
         const { targetUrl, body: requestBody, headers: customHeaders = {} } = parseResult.data;
 
-        // Validate URL is HTTPS
-        if (!targetUrl.startsWith("https://")) {
+        // Validate URL is HTTPS (allow localhost for local dev)
+        const parsedUrl = new URL(targetUrl);
+        const isLocalhost = parsedUrl.hostname === "localhost" || parsedUrl.hostname === "127.0.0.1";
+        if (!targetUrl.startsWith("https://") && !isLocalhost) {
             return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
         }
 
@@ -58,6 +60,13 @@ mcpProxyRoutes.post("/", async (c) => {
             if (allowedHeaders.includes(name.toLowerCase())) {
                 headers[name] = value;
             }
+        }
+
+        // Forward X-API-Key from the original proxy request to the target
+        // (the proxy already validated auth, so internal MCP endpoints can re-validate)
+        const incomingApiKey = c.req.header("X-API-Key");
+        if (incomingApiKey) {
+            headers["X-API-Key"] = incomingApiKey;
         }
 
         // Forward request to MCP server
