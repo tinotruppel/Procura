@@ -28,14 +28,17 @@
         "@eslint/js": "^9.39.2",
         "@types/better-sqlite3": "^7.6.13",
         "@types/node": "^22.0.0",
-        "@vitest/coverage-v8": "^2.1.9",
+        "@vitest/coverage-v8": "^4.0.18",
         "better-sqlite3": "^12.6.2",
         "esbuild": "^0.27.2",
         "eslint": "^9.39.2",
-        "eslint-plugin-sonarjs": "^3.0.6",
+        "eslint-plugin-sonarjs": "^4.0.0",
         "tsx": "^4.19.0",
         "typescript": "^5.6.0",
         "typescript-eslint": "^8.54.0",
-        "vitest": "^2.1.0"
+        "vitest": "^4.0.18"
+    },
+    "overrides": {
+        "minimatch": "^10.2.1"
     }
 }

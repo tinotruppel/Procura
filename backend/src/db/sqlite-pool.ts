@@ -120,7 +120,8 @@ export function createSqlitePool(schemaSql?: string): SqlitePool {
             .replace(/CHARACTER\s+SET\s+\w+\s*/gi, "")
             .replace(/COLLATE\s+\w+\s*/gi, "")
             .replace(/LONGBLOB/gi, "BLOB")
-            .replace(/CREATE\s+DATABASE\s+IF\s+NOT\s+EXISTS\s+\w+[^;]*;/gi, "")
+            // eslint-disable-next-line sonarjs/slow-regex -- schema SQL at startup, not user input
+            .replace(/CREATE\s+DATABASE\s+IF\s+NOT\s+EXISTS\s+\w+[^;\n]*;/gi, "")
             .replace(/USE\s+\w+\s*;/gi, "")
             // INDEX in CREATE TABLE must be removed (SQLite uses CREATE INDEX separately)
             .replace(/,\s*INDEX\s+\w+\s*\([^)]+\)/gi, "")

@@ -1,15 +1,3 @@
-/**
- * Google Docs MCP Server
- * Implements the Model Context Protocol for Google Docs operations
- *
- * Endpoint: /mcp/google-docs
- * Transport: Streamable HTTP via @hono/mcp
- *
- * Auth: Client sends `Authorization: Bearer <session_token>` (opaque token
- * issued during OAuth). The route handler extracts it and makes it available
- * to tool handlers via AsyncLocalStorage.
- */
-
 import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
@@ -21,6 +9,10 @@ import {
     isGoogleConfigured,
     isValidSession,
 } from "../lib/google-auth";
+import {
+    parseMarkdownToRequests,
+    type TableData,
+} from "../lib/markdown-parser";
 
 // =============================================================================
 // Session context (per-request)
@@ -38,26 +30,6 @@ async function getToken(): Promise<string> {
 // =============================================================================
 // Types
 // =============================================================================
-
-interface FormattingRequest {
-    updateTextStyle?: {
-        range: { startIndex: number; endIndex: number };
-        textStyle: { bold?: boolean; italic?: boolean; link?: { url: string } };
-        fields: string;
-    };
-    updateParagraphStyle?: {
-        range: { startIndex: number; endIndex: number };
-        paragraphStyle: { namedStyleType: string };
-        fields: string;
-    };
-}
-
-interface TableData {
-    position: number;
-    rows: string[][];
-    numRows: number;
-    numCols: number;
-}
 
 type AuthHeaders = { Authorization: string; "Content-Type": string };
 
@@ -89,126 +61,6 @@ function getDocumentEndIndex(doc: Record<string, unknown>): number {
     const body = doc.body as { content?: Array<{ endIndex?: number }> } | undefined;
     if (!body?.content || body.content.length === 0) return 1;
     return (body.content[body.content.length - 1].endIndex || 1) - 1;
-}
-
-function parseMarkdownToRequests(
-    markdown: string,
-    startIndex: number
-): { plainText: string; requests: FormattingRequest[]; tables: TableData[] } {
-    const requests: FormattingRequest[] = [];
-    const parsedTables: TableData[] = [];
-    let plainText = markdown;
-
-    // Extract tables
-    const tables: { match: string; rows: string[][] }[] = [];
-    const allLines = plainText.split("\n");
-    let lineIndex = 0;
-    while (lineIndex < allLines.length) {
-        const line = allLines[lineIndex];
-        if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
-            if (lineIndex + 1 < allLines.length && /^\|[-:| ]+\|$/.test(allLines[lineIndex + 1].trim())) {
-                const tableLines: string[] = [line];
-                let tableEndIndex = lineIndex + 1;
-                for (let i = lineIndex + 1; i < allLines.length; i++) {
-                    if (allLines[i].trim().startsWith("|") && allLines[i].trim().endsWith("|")) {
-                        tableLines.push(allLines[i]);
-                        tableEndIndex = i;
-                    } else break;
-                }
-                const rows: string[][] = [];
-                for (let i = 0; i < tableLines.length; i++) {
-                    if (i === 1) continue;
-                    rows.push(tableLines[i].split("|").slice(1, -1).map((cell) => cell.trim()));
-                }
-                tables.push({ match: tableLines.join("\n"), rows });
-                lineIndex = tableEndIndex + 1;
-                continue;
-            }
-        }
-        lineIndex++;
-    }
-    for (const table of tables) {
-        plainText = plainText.replace(table.match, `__TABLE_${tables.indexOf(table)}__`);
-    }
-
-    const lines = plainText.split("\n");
-    let currentIndex = startIndex;
-    const processedLines: string[] = [];
-    const headingRanges: { start: number; end: number; level: number }[] = [];
-    const tablePositions: { index: number; tableIdx: number }[] = [];
-
-    for (const line of lines) {
-        const headingMatch = /^(#{1,3})\s+(.+)$/.exec(line);
-        const hrMatch = /^---+$/.exec(line);
-        const tableMatch = /^__TABLE_(\d+)__$/.exec(line);
-        if (headingMatch) {
-            const level = headingMatch[1].length;
-            const text = headingMatch[2];
-            headingRanges.push({ start: currentIndex, end: currentIndex + text.length + 1, level });
-            processedLines.push(text);
-            currentIndex += text.length + 1;
-        } else if (hrMatch) {
-            const visualLine = "────────────────────────────────────────";
-            processedLines.push(visualLine);
-            currentIndex += visualLine.length + 1;
-        } else if (tableMatch) {
-            tablePositions.push({ index: currentIndex, tableIdx: parseInt(tableMatch[1], 10) });
-            processedLines.push("");
-            currentIndex += 1;
-        } else {
-            processedLines.push(line);
-            currentIndex += line.length + 1;
-        }
-    }
-    plainText = processedLines.join("\n");
-
-    for (const pos of [...tablePositions].reverse()) {
-        const table = tables[pos.tableIdx];
-        if (!table) continue;
-        parsedTables.push({ position: pos.index, rows: table.rows, numRows: table.rows.length, numCols: table.rows[0]?.length || 1 });
-    }
-
-    for (const h of headingRanges) {
-        const styleType = h.level === 1 ? "HEADING_1" : h.level === 2 ? "HEADING_2" : "HEADING_3";
-        requests.push({ updateParagraphStyle: { range: { startIndex: h.start, endIndex: h.end }, paragraphStyle: { namedStyleType: styleType }, fields: "namedStyleType" } });
-    }
-
-    // Bold
-    let match;
-    let offset = 0;
-    const boldRanges: { start: number; end: number }[] = [];
-    const boldRegex = /\*\*(.+?)\*\*/g;
-    while ((match = boldRegex.exec(plainText)) !== null) {
-        boldRanges.push({ start: startIndex + match.index - offset, end: startIndex + match.index - offset + match[1].length });
-        offset += 4;
-    }
-    plainText = plainText.replace(/\*\*(.+?)\*\*/g, "$1");
-
-    // Italic
-    offset = 0;
-    const italicRanges: { start: number; end: number }[] = [];
-    const italicRegex = /(?<!\*)\*([^*]+?)\*(?!\*)/g;
-    while ((match = italicRegex.exec(plainText)) !== null) {
-        italicRanges.push({ start: startIndex + match.index - offset, end: startIndex + match.index - offset + match[1].length });
-        offset += 2;
-    }
-    plainText = plainText.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, "$1");
-
-    // Links
-    offset = 0;
-    const linkRanges: { start: number; end: number; url: string }[] = [];
-    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-    while ((match = linkRegex.exec(plainText)) !== null) {
-        linkRanges.push({ start: startIndex + match.index - offset, end: startIndex + match.index - offset + match[1].length, url: match[2] });
-        offset += match[0].length - match[1].length;
-    }
-    plainText = plainText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1");
-
-    for (const r of boldRanges) requests.push({ updateTextStyle: { range: { startIndex: r.start, endIndex: r.end }, textStyle: { bold: true }, fields: "bold" } });
-    for (const r of italicRanges) requests.push({ updateTextStyle: { range: { startIndex: r.start, endIndex: r.end }, textStyle: { italic: true }, fields: "italic" } });
-    for (const r of linkRanges) requests.push({ updateTextStyle: { range: { startIndex: r.start, endIndex: r.end }, textStyle: { link: { url: r.url } }, fields: "link" } });
-
-    return { plainText, requests, tables: parsedTables };
 }
 
 async function insertTablesIntoDocument(documentId: string, tables: TableData[], headers: AuthHeaders): Promise<void> {
