@@ -3,7 +3,7 @@ import { Chat } from "@/components/Chat";
 import { Settings } from "@/components/Settings";
 import { SecurityGate } from "@/components/SecurityGate";
 import { isVaultUnlocked, restoreVaultFromSession } from "@/lib/vault";
-import { getTheme, applyTheme } from "@/lib/storage";
+import { getTheme, applyTheme, watchSystemTheme } from "@/lib/storage";
 
 type View = "chat" | "settings";
 
@@ -91,6 +91,10 @@ function App() {
             setVaultReady(true);
         }
         initVault();
+
+        // Re-apply theme when OS switches between light/dark while set to "system"
+        const cleanup = watchSystemTheme();
+        return cleanup;
     }, []);
 
     if (!vaultReady) {

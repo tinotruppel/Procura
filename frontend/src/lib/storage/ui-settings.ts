@@ -53,3 +53,18 @@ export function applyTheme(theme: Theme): void {
         meta.setAttribute("content", themeColor);
     }
 }
+
+/**
+ * Watch for OS theme changes and re-apply when theme is "system".
+ * Returns a cleanup function to remove the listener.
+ */
+export function watchSystemTheme(): () => void {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = async () => {
+        const theme = await getTheme();
+        if (theme === "system") applyTheme(theme);
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+}
+

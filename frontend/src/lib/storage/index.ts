@@ -16,7 +16,7 @@ export type { CloudConfig } from "./cloud";
 export { getCloudConfig, setCloudConfig, getCloudSyncUrl, getCloudProxyUrl, getCloudDirectoryUrl } from "./cloud";
 export { getMcpToolStates, setMcpToolStates, getMcpToolKey, isMcpToolEnabled, setMcpToolEnabled } from "./mcp-tools";
 export type { Theme } from "./ui-settings";
-export { getDebugMode, setDebugMode, getTheme, setTheme, applyTheme } from "./ui-settings";
+export { getDebugMode, setDebugMode, getTheme, setTheme, applyTheme, watchSystemTheme } from "./ui-settings";
 export type { ExportedConfig } from "./export-import";
 export { exportConfig, importConfig } from "./export-import";
 export { migrateLegacySecretsToVault } from "./vault-migration";
