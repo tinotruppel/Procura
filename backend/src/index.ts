@@ -15,10 +15,12 @@
  *   GET    /mcp/knowledge-base        - Knowledge Base MCP server (semantic search)
  *   GET    /mcp/document-media        - Document/Media MCP server (OCR, transcription)
  *   GET    /mcp/github                - GitHub MCP server (read-only)
- *   GET    /mcp/image-generation       - Image Generation MCP server (Imagen AI)
- *   GET    /mcp/google-docs            - Google Docs MCP server
- *   GET    /mcp/google-sheets          - Google Sheets MCP server
- *   GET    /mcp/google-slides          - Google Slides MCP server
+ *   GET    /mcp/image-generation      - Image Generation MCP server (Imagen AI)
+ *   GET    /mcp/google-docs           - Google Docs MCP server
+ *   GET    /mcp/google-sheets         - Google Sheets MCP server
+ *   GET    /mcp/google-slides         - Google Slides MCP server
+ *   GET    /mcp/gmail                 - Gmail MCP server
+ *   GET    /mcp/google-calendar       - Google Calendar MCP server
  */
 
 import { Hono } from "hono";
@@ -38,6 +40,8 @@ import { imageGenerationMcpRoutes } from "./routes/image-generation-mcp";
 import { googleDocsMcpRoutes } from "./routes/google-docs-mcp";
 import { googleSheetsMcpRoutes } from "./routes/google-sheets-mcp";
 import { googleSlidesMcpRoutes } from "./routes/google-slides-mcp";
+import { gmailMcpRoutes } from "./routes/gmail-mcp";
+import { googleCalendarMcpRoutes } from "./routes/google-calendar-mcp";
 import { googleOAuthRoutes } from "./routes/google-oauth";
 import { mcpDirectoryRoutes } from "./routes/mcp-directory";
 import { getConfig } from "./config";
@@ -77,6 +81,8 @@ app.route("/mcp/image-generation", imageGenerationMcpRoutes);
 app.route("/mcp/google-docs", googleDocsMcpRoutes);
 app.route("/mcp/google-sheets", googleSheetsMcpRoutes);
 app.route("/mcp/google-slides", googleSlidesMcpRoutes);
+app.route("/mcp/gmail", gmailMcpRoutes);
+app.route("/mcp/google-calendar", googleCalendarMcpRoutes);
 // OAuth AS: mount at root so endpoints are at /.well-known/*, /authorize, /token, /register, /auth/google/*
 app.route("/", googleOAuthRoutes);
 

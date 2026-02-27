@@ -33,6 +33,8 @@ describe("MCP Directory", () => {
         expect(serverNames).toContain("google-docs");
         expect(serverNames).toContain("google-sheets");
         expect(serverNames).toContain("google-slides");
+        expect(serverNames).toContain("gmail");
+        expect(serverNames).toContain("google-calendar");
     });
 
     it("should have valid fields for every server entry", async () => {
@@ -57,6 +59,6 @@ describe("MCP Directory", () => {
 
     it("should export MCP_SERVERS for reuse", () => {
         expect(Array.isArray(MCP_SERVERS)).toBe(true);
-        expect(MCP_SERVERS.length).toBe(10);
+        expect(MCP_SERVERS.length).toBe(12);
     });
 });

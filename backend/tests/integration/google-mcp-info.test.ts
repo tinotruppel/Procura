@@ -1,7 +1,7 @@
 /**
  * Integration Tests for Google MCP Server info endpoints
  *
- * Tests the /info endpoints for Google Docs, Sheets, and Slides MCP servers.
+ * Tests the /info endpoints for Google Docs, Sheets, Slides, Gmail, and Calendar MCP servers.
  * These endpoints don't require authentication and return server metadata.
  */
 
@@ -98,6 +98,58 @@ describe("Google MCP Info Endpoints", () => {
         });
     });
 
+    describe("GET /mcp/gmail/info", () => {
+        it("should return server metadata", async () => {
+            const res = await app.request("/mcp/gmail/info");
+            expect(res.status).toBe(200);
+            const data = await res.json() as Record<string, unknown>;
+            expect(data.name).toBe("gmail");
+            expect(data.version).toBe("1.0.0");
+            expect(typeof data.configured).toBe("boolean");
+        });
+
+        it("should include tool list when configured", async () => {
+            const res = await app.request("/mcp/gmail/info");
+            const data = await res.json() as Record<string, unknown>;
+            expect(Array.isArray(data.tools)).toBe(true);
+            if (data.configured) {
+                expect(data.tools).toContain("search_emails");
+            }
+        });
+
+        it("should return status field", async () => {
+            const res = await app.request("/mcp/gmail/info");
+            const data = await res.json() as Record<string, unknown>;
+            expect(["ready", "not_configured"]).toContain(data.status);
+        });
+    });
+
+    describe("GET /mcp/google-calendar/info", () => {
+        it("should return server metadata", async () => {
+            const res = await app.request("/mcp/google-calendar/info");
+            expect(res.status).toBe(200);
+            const data = await res.json() as Record<string, unknown>;
+            expect(data.name).toBe("google-calendar");
+            expect(data.version).toBe("1.0.0");
+            expect(typeof data.configured).toBe("boolean");
+        });
+
+        it("should include tool list when configured", async () => {
+            const res = await app.request("/mcp/google-calendar/info");
+            const data = await res.json() as Record<string, unknown>;
+            expect(Array.isArray(data.tools)).toBe(true);
+            if (data.configured) {
+                expect(data.tools).toContain("list_events");
+            }
+        });
+
+        it("should return status field", async () => {
+            const res = await app.request("/mcp/google-calendar/info");
+            const data = await res.json() as Record<string, unknown>;
+            expect(["ready", "not_configured"]).toContain(data.status);
+        });
+    });
+
     describe("Auth rejection on MCP endpoints", () => {
         it("should return 503 or 401 for POST /mcp/google-docs without session", async () => {
             const res = await app.request("/mcp/google-docs", {
@@ -120,6 +172,24 @@ describe("Google MCP Info Endpoints", () => {
 
         it("should return 503 or 401 for POST /mcp/google-slides without session", async () => {
             const res = await app.request("/mcp/google-slides", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Api-Key": process.env.API_KEYS || "test" },
+                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+            });
+            expect([401, 500, 503]).toContain(res.status);
+        });
+
+        it("should return 503 or 401 for POST /mcp/gmail without session", async () => {
+            const res = await app.request("/mcp/gmail", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "X-Api-Key": process.env.API_KEYS || "test" },
+                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+            });
+            expect([401, 500, 503]).toContain(res.status);
+        });
+
+        it("should return 503 or 401 for POST /mcp/google-calendar without session", async () => {
+            const res = await app.request("/mcp/google-calendar", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "X-Api-Key": process.env.API_KEYS || "test" },
                 body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),

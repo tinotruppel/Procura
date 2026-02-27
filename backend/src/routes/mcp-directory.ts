@@ -86,6 +86,18 @@ export const MCP_SERVERS: McpServerEntry[] = [
         endpoint: "/mcp/google-slides",
         description: "Manage Google Slides presentations (slides, text, images, find & replace)",
     },
+    {
+        name: "gmail",
+        title: "Gmail",
+        endpoint: "/mcp/gmail",
+        description: "Search, read, send, and manage Gmail emails and labels",
+    },
+    {
+        name: "google-calendar",
+        title: "Google Calendar",
+        endpoint: "/mcp/google-calendar",
+        description: "Manage Google Calendar events (list, create, update, delete)",
+    },
 ];
 
 // =============================================================================
