@@ -130,3 +130,42 @@ export async function upsertObject(
     );
     return result;
 }
+
+/**
+ * Get user IDs whose most recent activity across sync_objects and oauth_tokens
+ * is older than the given cutoff timestamp.
+ */
+export async function getInactiveUserIds(cutoffTimestamp: number): Promise<string[]> {
+    // Find users from sync_objects whose newest last_modified < cutoff
+    // UNION users from oauth_tokens whose newest updated_at < cutoff and who have no sync_objects
+    // Exclude any user who is still active in either table
+    const [rows] = await getPool().execute<RowDataPacket[]>(
+        `SELECT user_id FROM (
+            SELECT user_id, MAX(last_modified) AS latest FROM sync_objects GROUP BY user_id
+            UNION ALL
+            SELECT user_id, MAX(updated_at) AS latest FROM oauth_tokens GROUP BY user_id
+        ) AS combined
+        GROUP BY user_id
+        HAVING MAX(latest) < ?`,
+        [cutoffTimestamp]
+    );
+    return rows.map(r => r.user_id as string);
+}
+
+/**
+ * Delete all sync_objects and oauth_tokens for a given user.
+ */
+export async function deleteUserData(userId: string): Promise<{ syncDeleted: number; tokensDeleted: number }> {
+    const [syncResult] = await getPool().execute<ResultSetHeader>(
+        `DELETE FROM sync_objects WHERE user_id = ?`,
+        [userId]
+    );
+    const [tokensResult] = await getPool().execute<ResultSetHeader>(
+        `DELETE FROM oauth_tokens WHERE user_id = ?`,
+        [userId]
+    );
+    return {
+        syncDeleted: syncResult.affectedRows,
+        tokensDeleted: tokensResult.affectedRows,
+    };
+}

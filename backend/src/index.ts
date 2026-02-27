@@ -26,6 +26,7 @@ import { createCorsMiddleware } from "./middleware/cors";
 import { authMiddleware } from "./middleware/auth";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
 import { syncRoutes } from "./routes/sync";
+import { cronRoutes } from "./routes/cron";
 import { mcpProxyRoutes } from "./routes/mcp-proxy";
 import { tasksMcpRoutes } from "./routes/tasks-mcp";
 import { weatherMcpRoutes } from "./routes/weather-mcp";
@@ -54,6 +55,7 @@ app.use("/sync/*", authMiddleware);
 app.use("/mcp-proxy/*", authMiddleware);
 app.use("/mcp-directory/*", authMiddleware);
 app.use("/mcp/*", authMiddleware);
+app.use("/cron/*", authMiddleware);
 app.use("/auth/google/status", authMiddleware);
 app.use("/auth/google/disconnect", authMiddleware);
 // Note: /auth/google/callback is NOT auth-protected — Google redirects users there
@@ -61,6 +63,7 @@ app.use("/auth/google/disconnect", authMiddleware);
 
 // Mount routes
 app.route("/sync", syncRoutes);
+app.route("/cron", cronRoutes);
 app.route("/mcp-proxy", mcpProxyRoutes);
 app.route("/mcp-directory", mcpDirectoryRoutes);
 // When adding new MCP routes, also update mcp-directory.ts

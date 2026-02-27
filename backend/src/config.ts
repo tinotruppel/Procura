@@ -37,6 +37,9 @@ const configSchema = z.object({
 
     // MCP proxy allowed domains (empty = allow all HTTPS)
     mcpProxyAllowedDomains: z.array(z.string()).default([]),
+
+    // Data retention: delete data for users inactive longer than N days
+    cleanupInactiveDays: z.coerce.number().default(90),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -66,6 +69,7 @@ export function loadConfig(): Config {
         maxBlobSize: env.MAX_BLOB_SIZE,
         apiKeys: parseCommaSeparated(env.API_KEYS),
         mcpProxyAllowedDomains: parseCommaSeparated(env.MCP_PROXY_ALLOWED_DOMAINS),
+        cleanupInactiveDays: env.CLEANUP_INACTIVE_DAYS,
     });
 }
 
@@ -81,6 +85,7 @@ const testDefaults: Config = {
     maxBlobSize: 50 * 1024 * 1024,
     apiKeys: [],
     mcpProxyAllowedDomains: [],
+    cleanupInactiveDays: 90,
 };
 
 export function getConfig(): Config {
