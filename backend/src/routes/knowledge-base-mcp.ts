@@ -10,23 +10,22 @@
  * - search: Semantic search with auto-generated embeddings
  * - retrieve: Get documents by ID
  * - archive: Chunk and store documents with embeddings
+ *
+ * Per-request Qdrant API key:
+ * - External API keys can be mapped to different Qdrant API keys via QDRANT_KEY_MAPPINGS
+ * - If no mapping exists for the external key, falls back to QDRANT_API_KEY env default
  */
 
 import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
+import { AsyncLocalStorage } from "async_hooks";
+import { getConfig } from "../config";
 
 // =============================================================================
 // Types
 // =============================================================================
-
-interface QdrantAuth {
-    url: string;
-    apiKey?: string;
-    embeddingApiKey: string;
-    embeddingModel: string;
-}
 
 interface QdrantPoint {
     id: string | number;
@@ -43,6 +42,20 @@ interface QdrantCollection {
 interface DocumentChunk {
     text: string;
     index: number;
+}
+
+// =============================================================================
+// Per-request Qdrant API key (resolved from API key mapping)
+// =============================================================================
+
+const qdrantKeyStore = new AsyncLocalStorage<string | undefined>();
+
+/**
+ * Get the Qdrant API key for the current request.
+ * Checks the per-request store first (from API key mapping), falls back to env default.
+ */
+function getQdrantApiKey(): string | undefined {
+    return qdrantKeyStore.getStore() ?? process.env.QDRANT_API_KEY;
 }
 
 // =============================================================================
@@ -170,7 +183,13 @@ async function qdrantRequest<T>(
 // MCP Server Setup
 // =============================================================================
 
-function getDefaultAuth(): QdrantAuth | null {
+interface BaseAuth {
+    url: string;
+    embeddingApiKey: string;
+    embeddingModel: string;
+}
+
+function getBaseAuth(): BaseAuth | null {
     const url = process.env.QDRANT_URL;
     const embeddingApiKey = process.env.OPENAI_API_KEY;
     const embeddingModel = process.env.QDRANT_EMBEDDING_MODEL || "text-embedding-3-small";
@@ -180,8 +199,7 @@ function getDefaultAuth(): QdrantAuth | null {
     }
 
     return {
-        url: url.replace(/\/$/, ""), // Remove trailing slash
-        apiKey: process.env.QDRANT_API_KEY,
+        url: url.replace(/\/$/, ""),
         embeddingApiKey,
         embeddingModel,
     };
@@ -192,9 +210,9 @@ const mcpServer = new McpServer({
     version: "1.0.0",
 });
 
-const auth = getDefaultAuth();
+const baseAuth = getBaseAuth();
 
-if (auth) {
+if (baseAuth) {
     // --- list_collections ---
     mcpServer.registerTool(
         "list_collections",
@@ -203,7 +221,7 @@ if (auth) {
         },
         async () => {
             const data = await qdrantRequest<{ result: { collections: QdrantCollection[] } }>(
-                auth.url, "/collections", "GET", auth.apiKey
+                baseAuth.url, "/collections", "GET", getQdrantApiKey()
             );
 
             const collections = data.result?.collections || [];
@@ -249,7 +267,7 @@ if (auth) {
             }
 
             // Generate embedding
-            const embedding = await generateEmbedding(query, auth.embeddingApiKey, auth.embeddingModel);
+            const embedding = await generateEmbedding(query, baseAuth.embeddingApiKey, baseAuth.embeddingModel);
 
             // Build query
             const queryBody: Record<string, unknown> = {
@@ -262,7 +280,7 @@ if (auth) {
             }
 
             const data = await qdrantRequest<{ result: { points: QdrantPoint[] } }>(
-                auth.url, `/collections/${collection}/points/query`, "POST", auth.apiKey, queryBody
+                baseAuth.url, `/collections/${collection}/points/query`, "POST", getQdrantApiKey(), queryBody
             );
 
             const points = data.result?.points || [];
@@ -296,7 +314,7 @@ if (auth) {
         },
         async ({ collection, ids }) => {
             const data = await qdrantRequest<{ result: QdrantPoint[] }>(
-                auth.url, `/collections/${collection}/points`, "POST", auth.apiKey,
+                baseAuth.url, `/collections/${collection}/points`, "POST", getQdrantApiKey(),
                 { ids, with_payload: true }
             );
 
@@ -347,9 +365,11 @@ if (auth) {
                 }
             }
 
+            const qdrantApiKey = getQdrantApiKey();
+
             // Check if collection exists
             try {
-                await qdrantRequest(auth.url, `/collections/${collection}`, "GET", auth.apiKey);
+                await qdrantRequest(baseAuth.url, `/collections/${collection}`, "GET", qdrantApiKey);
             } catch {
                 return {
                     content: [{
@@ -364,7 +384,7 @@ if (auth) {
 
             // Check for existing document
             const existingCheck = await qdrantRequest<{ result: { points: QdrantPoint[] } }>(
-                auth.url, `/collections/${collection}/points/scroll`, "POST", auth.apiKey,
+                baseAuth.url, `/collections/${collection}/points/scroll`, "POST", qdrantApiKey,
                 {
                     filter: { must: [{ key: "documentId", match: { value: documentId } }] },
                     limit: 1,
@@ -388,7 +408,7 @@ if (auth) {
 
                 // Delete existing chunks
                 await qdrantRequest(
-                    auth.url, `/collections/${collection}/points/delete`, "POST", auth.apiKey,
+                    baseAuth.url, `/collections/${collection}/points/delete`, "POST", qdrantApiKey,
                     { filter: { must: [{ key: "documentId", match: { value: documentId } }] } }
                 );
             }
@@ -401,7 +421,7 @@ if (auth) {
             const archivedAt = new Date().toISOString();
 
             for (const chunk of chunks) {
-                const embedding = await generateEmbedding(chunk.text, auth.embeddingApiKey, auth.embeddingModel);
+                const embedding = await generateEmbedding(chunk.text, baseAuth.embeddingApiKey, baseAuth.embeddingModel);
                 const pointId = stringToUuid(`${documentId}_chunk_${chunk.index}`);
 
                 points.push({
@@ -420,7 +440,7 @@ if (auth) {
 
             // Upsert points
             await qdrantRequest(
-                auth.url, `/collections/${collection}/points`, "PUT", auth.apiKey,
+                baseAuth.url, `/collections/${collection}/points`, "PUT", qdrantApiKey,
                 { points }
             );
 
@@ -449,7 +469,7 @@ export const knowledgeBaseMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 knowledgeBaseMcpRoutes.all("/", async (c) => {
-    if (!auth) {
+    if (!baseAuth) {
         return c.json({
             error: "Knowledge Base MCP server not configured. Set QDRANT_URL and OPENAI_API_KEY environment variables."
         }, 503);
@@ -459,7 +479,12 @@ knowledgeBaseMcpRoutes.all("/", async (c) => {
         await mcpServer.connect(transport);
     }
 
-    return transport.handleRequest(c);
+    // Resolve per-request Qdrant API key from mapping
+    const externalKey = c.req.header("X-API-Key") || "";
+    const config = getConfig();
+    const mappedQdrantKey = externalKey ? config.qdrantKeyMappings.get(externalKey) : undefined;
+
+    return qdrantKeyStore.run(mappedQdrantKey, () => transport.handleRequest(c));
 });
 
 knowledgeBaseMcpRoutes.get("/info", async (c) => {
@@ -467,10 +492,10 @@ knowledgeBaseMcpRoutes.get("/info", async (c) => {
         name: "knowledge-base",
         version: "1.0.0",
         description: "Semantic search and document archival",
-        status: auth ? "ready" : "not_configured",
-        configured: !!auth,
-        tools: auth ? ["list_collections", "search", "retrieve", "archive"] : [],
-        embeddingModel: auth?.embeddingModel,
-        note: auth ? undefined : "Set QDRANT_URL, OPENAI_API_KEY, and optionally QDRANT_API_KEY, QDRANT_EMBEDDING_MODEL"
+        status: baseAuth ? "ready" : "not_configured",
+        configured: !!baseAuth,
+        tools: baseAuth ? ["list_collections", "search", "retrieve", "archive"] : [],
+        embeddingModel: baseAuth?.embeddingModel,
+        note: baseAuth ? undefined : "Set QDRANT_URL, OPENAI_API_KEY, and optionally QDRANT_API_KEY, QDRANT_EMBEDDING_MODEL"
     });
 });

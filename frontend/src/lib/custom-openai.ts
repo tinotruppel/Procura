@@ -249,7 +249,8 @@ export async function sendMessageCustomOpenAI(
     systemPrompt?: string,
     onDebugEvent?: StreamCallback,
     onTextChunk?: TextChunkCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    getIntervention?: () => string | null
 ): Promise<LLMResponse> {
     const apiUrl = baseUrl.replace(/\/$/, "") + "/v1/chat/completions";
 
@@ -355,6 +356,12 @@ export async function sendMessageCustomOpenAI(
                         toolResult.success ? toolResult.data : { error: toolResult.error }
                     ),
                 });
+            }
+
+            // Inject user intervention if one is pending
+            const intervention = getIntervention?.();
+            if (intervention) {
+                currentMessages.push({ role: "user", content: `[User intervention]: ${intervention}` });
             }
 
             // Continue loop to get final response

@@ -14,7 +14,9 @@ import { sendMessageCustomOpenAI } from "./custom-openai";
  * @param onTextChunk Optional callback for real-time text streaming
  * @param signal Optional AbortSignal to cancel the request
  * @param customBaseUrl Required for "custom" provider - the base URL of the OpenAI-compatible API
+ * @param getIntervention Optional callback to pull pending user intervention messages mid-loop
  */
+// eslint-disable-next-line max-params -- positional args match individual provider signatures
 export async function sendMessage(
     provider: LLMProvider,
     apiKey: string,
@@ -24,7 +26,8 @@ export async function sendMessage(
     onDebugEvent?: StreamCallback,
     onTextChunk?: TextChunkCallback,
     signal?: AbortSignal,
-    customBaseUrl?: string
+    customBaseUrl?: string,
+    getIntervention?: () => string | null
 ): Promise<LLMResponse> {
     if (!apiKey) {
         throw new Error(`No API key configured for ${provider}`);
@@ -32,16 +35,16 @@ export async function sendMessage(
 
     switch (provider) {
         case "gemini":
-            return sendMessageGemini(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal);
+            return sendMessageGemini(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal, getIntervention);
         case "claude":
-            return sendMessageClaude(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal);
+            return sendMessageClaude(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal, getIntervention);
         case "openai":
-            return sendMessageOpenAI(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal);
+            return sendMessageOpenAI(apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal, getIntervention);
         case "custom":
             if (!customBaseUrl) {
                 throw new Error("Custom provider requires a base URL");
             }
-            return sendMessageCustomOpenAI(customBaseUrl, apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal);
+            return sendMessageCustomOpenAI(customBaseUrl, apiKey, model, messages, systemPrompt, onDebugEvent, onTextChunk, signal, getIntervention);
         default:
             throw new Error(`Unknown provider: ${provider}`);
     }

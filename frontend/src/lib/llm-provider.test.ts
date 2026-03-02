@@ -41,6 +41,7 @@ describe("sendMessage", () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             undefined
         );
         expect(result.text).toBe("Gemini response");
@@ -61,6 +62,7 @@ describe("sendMessage", () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             undefined
         );
         expect(result.text).toBe("Claude response");
@@ -78,6 +80,7 @@ describe("sendMessage", () => {
             "test-key",
             "gpt-4",
             [{ role: "user", content: "Hello" }],
+            undefined,
             undefined,
             undefined,
             undefined,
@@ -128,7 +131,8 @@ describe("sendMessage", () => {
             "system prompt",
             undefined,
             undefined,
-            controller.signal
+            controller.signal,
+            undefined
         );
     });
 });

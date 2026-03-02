@@ -10,6 +10,7 @@ vi.mock('@/lib/vault', () => ({
 vi.mock('@/lib/storage', () => ({
     getTheme: vi.fn(() => Promise.resolve('system')),
     applyTheme: vi.fn(),
+    watchSystemTheme: vi.fn(() => () => { }),
 }));
 
 // Mock the Chat and Settings components to isolate App tests

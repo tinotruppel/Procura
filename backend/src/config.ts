@@ -40,6 +40,9 @@ const configSchema = z.object({
 
     // Data retention: delete data for users inactive longer than N days
     cleanupInactiveDays: z.coerce.number().default(90),
+
+    // API key → Qdrant API key mappings
+    qdrantKeyMappings: z.map(z.string(), z.string()).default(new Map()),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -47,6 +50,23 @@ export type Config = z.infer<typeof configSchema>;
 function parseCommaSeparated(value: string | undefined): string[] {
     if (!value || value.trim() === "") return [];
     return value.split(",").map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Parse QDRANT_KEY_MAPPINGS: "extKey1:qdrantKey1,extKey2:qdrantKey2"
+ * Maps external API key → internal Qdrant API key
+ */
+function parseKeyMappings(value: string | undefined): Map<string, string> {
+    const map = new Map<string, string>();
+    if (!value || value.trim() === "") return map;
+    for (const pair of value.split(",")) {
+        const sep = pair.indexOf(":");
+        if (sep <= 0) continue;
+        const extKey = pair.slice(0, sep).trim();
+        const qdrantKey = pair.slice(sep + 1).trim();
+        if (extKey && qdrantKey) map.set(extKey, qdrantKey);
+    }
+    return map;
 }
 
 export function loadConfig(): Config {
@@ -70,6 +90,7 @@ export function loadConfig(): Config {
         apiKeys: parseCommaSeparated(env.API_KEYS),
         mcpProxyAllowedDomains: parseCommaSeparated(env.MCP_PROXY_ALLOWED_DOMAINS),
         cleanupInactiveDays: env.CLEANUP_INACTIVE_DAYS,
+        qdrantKeyMappings: parseKeyMappings(env.QDRANT_KEY_MAPPINGS),
     });
 }
 
@@ -86,6 +107,7 @@ const testDefaults: Config = {
     apiKeys: [],
     mcpProxyAllowedDomains: [],
     cleanupInactiveDays: 90,
+    qdrantKeyMappings: new Map(),
 };
 
 export function getConfig(): Config {

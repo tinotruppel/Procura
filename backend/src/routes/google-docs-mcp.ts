@@ -8,6 +8,8 @@ import {
     createAuthHeaders,
     isGoogleConfigured,
     isValidSession,
+    buildGoogleWwwAuthenticate,
+    buildGoogleResourceMetadata,
 } from "../lib/google-auth";
 import {
     parseMarkdownToRequests,
@@ -261,12 +263,16 @@ googleDocsMcpRoutes.all("/", async (c) => {
 
     // Require valid session token — return 401 so frontend shows Login button
     if (!sessionToken || !(await isValidSession(sessionToken))) {
-        c.header("WWW-Authenticate", 'Bearer scope="google"');
+        c.header("WWW-Authenticate", buildGoogleWwwAuthenticate(c, "/mcp/google-docs"));
         return c.json({ error: "Google authentication required" }, 401);
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
     return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+});
+
+googleDocsMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
+    return c.json(buildGoogleResourceMetadata(c, "/mcp/google-docs"));
 });
 
 googleDocsMcpRoutes.get("/info", async (c) => {

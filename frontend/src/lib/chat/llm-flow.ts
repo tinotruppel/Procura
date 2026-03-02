@@ -12,6 +12,8 @@ interface ExecuteLlmChatTurnInput {
     onTextChunk?: TextChunkCallback;
     signal?: AbortSignal;
     customBaseUrl?: string;
+    /** Pull-based callback: returns and clears the next pending user intervention, or null */
+    getIntervention?: () => string | null;
 }
 
 export async function executeLlmChatTurn({
@@ -24,6 +26,7 @@ export async function executeLlmChatTurn({
     onTextChunk,
     signal,
     customBaseUrl,
+    getIntervention,
 }: ExecuteLlmChatTurnInput): Promise<LLMResponse> {
     return sendMessage(
         provider,
@@ -34,6 +37,8 @@ export async function executeLlmChatTurn({
         onDebugEvent,
         onTextChunk,
         signal,
-        customBaseUrl
+        customBaseUrl,
+        getIntervention
     );
 }
+

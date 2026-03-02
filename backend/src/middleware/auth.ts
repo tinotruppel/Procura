@@ -17,31 +17,37 @@ function timingSafeCompare(a: string, b: string): boolean {
 
 /**
  * Validates API key from X-API-Key header.
- * Returns true if valid or if no API keys are configured (open mode).
+ * Returns the matched key if valid, or null if invalid.
+ * Returns empty string if no API keys are configured (open mode).
  */
-export function validateApiKey(c: Context): boolean {
+export function validateApiKey(c: Context): string | null {
     const config = getConfig();
 
     // If no API keys configured, allow all (open mode for development)
     if (config.apiKeys.length === 0) {
-        return true;
+        return "";
     }
 
     // Get API key from X-API-Key header
     const providedKey = c.req.header("X-API-Key") || "";
     if (providedKey) {
-        return config.apiKeys.some(key => timingSafeCompare(key, providedKey));
+        const matched = config.apiKeys.find(key => timingSafeCompare(key, providedKey));
+        return matched ?? null;
     }
 
-    return false;
+    return null;
 }
 
 /**
- * Middleware that requires a valid API key
+ * Middleware that requires a valid API key.
+ * Stores the matched key on the context for downstream use.
  */
 export async function authMiddleware(c: Context, next: Next) {
-    if (!validateApiKey(c)) {
+    const matchedKey = validateApiKey(c);
+    if (matchedKey === null) {
         return c.json({ error: "Invalid or missing API key" }, 401);
     }
+    // Store matched key for per-key config resolution (e.g. Qdrant key mapping)
+    c.set("apiKey", matchedKey);
     await next();
 }

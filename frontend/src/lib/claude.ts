@@ -337,7 +337,8 @@ export async function sendMessageClaude(
     systemPrompt?: string,
     onDebugEvent?: StreamCallback,
     onTextChunk?: TextChunkCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    getIntervention?: () => string | null
 ): Promise<LLMResponse> {
     const toolDeclarations = await getEnabledToolDeclarations();
     const claudeTools = convertToolsForClaude(toolDeclarations as FunctionDeclaration[]);
@@ -381,7 +382,14 @@ export async function sendMessageClaude(
             debugEvents.push(...result.debugEvents);
 
             claudeMessages.push({ role: "assistant", content });
-            claudeMessages.push({ role: "user", content: result.toolResults });
+
+            // Merge tool results with any pending user intervention into a single user message
+            const userContent: ClaudeContent[] = [...result.toolResults];
+            const intervention = getIntervention?.();
+            if (intervention) {
+                userContent.push({ type: "text", text: `[User intervention]: ${intervention}` });
+            }
+            claudeMessages.push({ role: "user", content: userContent });
         } else {
             continueLoop = false;
             const textContent = content.find((c) => c.type === "text");

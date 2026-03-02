@@ -25,6 +25,7 @@ function createMockContext(apiKey?: string) {
             },
         },
         json: vi.fn().mockReturnValue(new Response()),
+        set: vi.fn(),
     } as unknown as Parameters<typeof validateApiKey>[0];
 }
 
@@ -35,43 +36,43 @@ describe("validateApiKey", () => {
 
     it("allows all requests when no API keys are configured (open mode)", () => {
         const c = createMockContext();
-        expect(validateApiKey(c)).toBe(true);
+        expect(validateApiKey(c)).toBe(""); // empty string = open mode
     });
 
     it("rejects requests without X-API-Key header", () => {
         mockConfig.apiKeys = ["test-key-123"];
         const c = createMockContext();
-        expect(validateApiKey(c)).toBe(false);
+        expect(validateApiKey(c)).toBeNull();
     });
 
     it("rejects requests with wrong API key", () => {
         mockConfig.apiKeys = ["correct-key"];
         const c = createMockContext("wrong-key");
-        expect(validateApiKey(c)).toBe(false);
+        expect(validateApiKey(c)).toBeNull();
     });
 
     it("accepts requests with valid API key", () => {
         mockConfig.apiKeys = ["valid-key-abc"];
         const c = createMockContext("valid-key-abc");
-        expect(validateApiKey(c)).toBe(true);
+        expect(validateApiKey(c)).toBe("valid-key-abc");
     });
 
     it("accepts requests matching any configured key", () => {
         mockConfig.apiKeys = ["key-1", "key-2", "key-3"];
         const c = createMockContext("key-2");
-        expect(validateApiKey(c)).toBe(true);
+        expect(validateApiKey(c)).toBe("key-2");
     });
 
     it("rejects partial key matches (key must match exactly)", () => {
         mockConfig.apiKeys = ["full-key-value"];
         const c = createMockContext("full-key");
-        expect(validateApiKey(c)).toBe(false);
+        expect(validateApiKey(c)).toBeNull();
     });
 
     it("rejects keys that contain the correct key as substring", () => {
         mockConfig.apiKeys = ["secret"];
         const c = createMockContext("secret-extra");
-        expect(validateApiKey(c)).toBe(false);
+        expect(validateApiKey(c)).toBeNull();
     });
 });
 

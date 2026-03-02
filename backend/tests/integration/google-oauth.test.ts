@@ -24,9 +24,9 @@ describe("Google OAuth Authorization Server", () => {
     // RFC8414 Authorization Server Metadata
     // =========================================================================
 
-    describe("GET /.well-known/oauth-authorization-server", () => {
+    describe("GET /google/.well-known/oauth-authorization-server", () => {
         it("should return metadata with all required fields", async () => {
-            const res = await app.request("/.well-known/oauth-authorization-server");
+            const res = await app.request("/google/.well-known/oauth-authorization-server");
             expect(res.status).toBe(200);
 
             const meta = await res.json() as Record<string, unknown>;
@@ -40,7 +40,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should return consistent base URL in all endpoints", async () => {
-            const res = await app.request("/.well-known/oauth-authorization-server");
+            const res = await app.request("/google/.well-known/oauth-authorization-server");
             const meta = await res.json() as Record<string, string>;
 
             const issuer = meta.issuer;
@@ -56,7 +56,7 @@ describe("Google OAuth Authorization Server", () => {
 
     describe("POST /oauth/register", () => {
         it("should register a client with valid redirect_uris", async () => {
-            const res = await app.request("/oauth/register", {
+            const res = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({
                     redirect_uris: ["http://localhost:3000/callback"],
@@ -77,12 +77,12 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should generate unique client_ids", async () => {
-            const res1 = await app.request("/oauth/register", {
+            const res1 = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({ redirect_uris: ["http://localhost:3000/cb1"] }),
                 headers: { "Content-Type": "application/json" },
             });
-            const res2 = await app.request("/oauth/register", {
+            const res2 = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({ redirect_uris: ["http://localhost:3000/cb2"] }),
                 headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should reject registration without redirect_uris", async () => {
-            const res = await app.request("/oauth/register", {
+            const res = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({ client_name: "No URIs" }),
                 headers: { "Content-Type": "application/json" },
@@ -103,7 +103,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should reject registration with empty redirect_uris", async () => {
-            const res = await app.request("/oauth/register", {
+            const res = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({ redirect_uris: [] }),
                 headers: { "Content-Type": "application/json" },
@@ -118,7 +118,7 @@ describe("Google OAuth Authorization Server", () => {
 
     describe("GET /oauth/authorize", () => {
         it("should reject missing required parameters", async () => {
-            const res = await app.request("/oauth/authorize");
+            const res = await app.request("/google/oauth/authorize");
             expect(res.status).toBe(400);
 
             const body = await res.json() as { error: string };
@@ -132,7 +132,7 @@ describe("Google OAuth Authorization Server", () => {
                 response_type: "token",
                 code_challenge: "abc123",
             });
-            const res = await app.request(`/oauth/authorize?${params}`);
+            const res = await app.request(`/google/oauth/authorize?${params}`);
             expect(res.status).toBe(400);
 
             const body = await res.json() as { error: string };
@@ -146,7 +146,7 @@ describe("Google OAuth Authorization Server", () => {
                 response_type: "code",
                 code_challenge: "abc123",
             });
-            const res = await app.request(`/oauth/authorize?${params}`);
+            const res = await app.request(`/google/oauth/authorize?${params}`);
             expect(res.status).toBe(400);
 
             const body = await res.json() as { error: string; error_description: string };
@@ -162,7 +162,7 @@ describe("Google OAuth Authorization Server", () => {
                 code_challenge: "abc123",
                 code_challenge_method: "S256",
             });
-            const res = await app.request(`/oauth/authorize?${params}`, { redirect: "manual" });
+            const res = await app.request(`/google/oauth/authorize?${params}`, { redirect: "manual" });
 
             // Should redirect to Google OAuth (302)
             expect(res.status).toBe(302);
@@ -178,7 +178,7 @@ describe("Google OAuth Authorization Server", () => {
                 response_type: "code",
                 code_challenge: "abc123",
             });
-            const res = await app.request(`/oauth/authorize?${params}`, { redirect: "manual" });
+            const res = await app.request(`/google/oauth/authorize?${params}`, { redirect: "manual" });
             expect(res.status).toBe(302);
         });
 
@@ -190,7 +190,7 @@ describe("Google OAuth Authorization Server", () => {
                 code_challenge: "test-challenge",
                 state: "my-state",
             });
-            const res = await app.request(`/oauth/authorize?${params}`, { redirect: "manual" });
+            const res = await app.request(`/google/oauth/authorize?${params}`, { redirect: "manual" });
             const location = res.headers.get("Location") || "";
 
             expect(location).toContain("scope=");
@@ -202,7 +202,7 @@ describe("Google OAuth Authorization Server", () => {
 
         it("should reject redirect_uri not registered for client", async () => {
             // First register a client with specific redirect_uri
-            const regRes = await app.request("/oauth/register", {
+            const regRes = await app.request("/google/oauth/register", {
                 method: "POST",
                 body: JSON.stringify({ redirect_uris: ["http://localhost:3000/registered"] }),
                 headers: { "Content-Type": "application/json" },
@@ -216,7 +216,7 @@ describe("Google OAuth Authorization Server", () => {
                 response_type: "code",
                 code_challenge: "abc123",
             });
-            const res = await app.request(`/oauth/authorize?${params}`);
+            const res = await app.request(`/google/oauth/authorize?${params}`);
             expect(res.status).toBe(400);
         });
     });
@@ -227,7 +227,7 @@ describe("Google OAuth Authorization Server", () => {
 
     describe("POST /oauth/token", () => {
         it("should reject unsupported grant_type", async () => {
-            const res = await app.request("/oauth/token", {
+            const res = await app.request("/google/oauth/token", {
                 method: "POST",
                 body: "grant_type=client_credentials&code=abc&code_verifier=xyz",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -239,7 +239,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should reject missing code or code_verifier", async () => {
-            const res = await app.request("/oauth/token", {
+            const res = await app.request("/google/oauth/token", {
                 method: "POST",
                 body: "grant_type=authorization_code",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -251,7 +251,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should reject invalid authorization code", async () => {
-            const res = await app.request("/oauth/token", {
+            const res = await app.request("/google/oauth/token", {
                 method: "POST",
                 body: "grant_type=authorization_code&code=invalid-code&code_verifier=test",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -263,7 +263,7 @@ describe("Google OAuth Authorization Server", () => {
         });
 
         it("should accept JSON body in addition to form-urlencoded", async () => {
-            const res = await app.request("/oauth/token", {
+            const res = await app.request("/google/oauth/token", {
                 method: "POST",
                 body: JSON.stringify({
                     grant_type: "authorization_code",

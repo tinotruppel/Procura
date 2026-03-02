@@ -16,6 +16,8 @@ import {
     createAuthHeaders,
     isGoogleConfigured,
     isValidSession,
+    buildGoogleWwwAuthenticate,
+    buildGoogleResourceMetadata,
 } from "../lib/google-auth";
 
 // =============================================================================
@@ -281,12 +283,16 @@ gmailMcpRoutes.all("/", async (c) => {
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
     if (!sessionToken || !(await isValidSession(sessionToken))) {
-        c.header("WWW-Authenticate", 'Bearer scope="google"');
+        c.header("WWW-Authenticate", buildGoogleWwwAuthenticate(c, "/mcp/gmail"));
         return c.json({ error: "Google authentication required" }, 401);
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
     return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+});
+
+gmailMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
+    return c.json(buildGoogleResourceMetadata(c, "/mcp/gmail"));
 });
 
 gmailMcpRoutes.get("/info", async (c) => {

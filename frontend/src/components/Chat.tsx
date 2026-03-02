@@ -7,6 +7,7 @@ import { ChatInput } from "@/components/ChatInput";
 import { useAttachments } from "@/hooks/useAttachments";
 import { useChatDraft } from "@/hooks/useChatDraft";
 import { useChatSessions } from "@/hooks/useChatSessions";
+import { useDuplicateChatWarning } from "@/hooks/useDuplicateChatWarning";
 import { useLangfuseTracing } from "@/hooks/useLangfuseTracing";
 import { ChatMessage, DebugEvent, LLMProvider } from "@/lib/llm-types";
 import {
@@ -32,7 +33,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Settings, History, Plus, Globe, Lock, LockOpen, ChevronDown, Edit2, FileDown, Pin, PinOff, X } from "lucide-react";
+import { Settings, History, Plus, Globe, Lock, LockOpen, ChevronDown, Edit2, FileDown, Pin, PinOff, X, AlertTriangle } from "lucide-react";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -96,6 +97,7 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
 
     // --- Extracted hooks ---
     const sessions = useChatSessions();
+    const isDuplicateChat = useDuplicateChatWarning(sessions.chatId);
     const attachments = useAttachments(setError);
     const tracing = useLangfuseTracing(sessions.messages.length);
 
@@ -386,6 +388,27 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
                 onTextChunk: makeTextChunkHandler(),
                 signal: abortControllerRef.current?.signal,
                 customBaseUrl: customBaseUrl || undefined,
+                getIntervention: () => {
+                    const queued = pendingInterventionRef.current;
+                    if (queued.length === 0) return null;
+                    const [next, ...rest] = queued;
+                    pendingInterventionRef.current = rest;
+                    setPendingIntervention(rest);
+                    // Insert intervention as visible user message before the pending model message
+                    sessions.setMessages(prev => {
+                        const updated = [...prev];
+                        const pendingIdx = updated.length - 1;
+                        const pendingModel = updated[pendingIdx];
+                        // Insert user message before the last (pending model) message
+                        if (pendingModel?.role === "model") {
+                            updated.splice(pendingIdx, 0, {
+                                role: "user", content: next, timestamp: Date.now(),
+                            });
+                        }
+                        return updated;
+                    });
+                    return next;
+                },
             });
 
             const assistantMessage: ChatMessage = {
@@ -394,7 +417,10 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
                 llmDebug: response.debug, debugEvents: response.debugEvents,
                 traceId, timestamp: Date.now(),
             };
-            const finalMessages = [...newDisplayMessages, assistantMessage];
+            // Use current messages (includes any interventions inserted mid-loop),
+            // replacing the pending model placeholder with the final assistant message
+            const currentMessages = sessions.messagesRef.current;
+            const finalMessages = [...currentMessages.slice(0, -1), assistantMessage];
             sessions.setMessages(finalMessages);
             await sessions.saveChat(finalMessages);
 
@@ -663,6 +689,14 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
                 onSelectChat={handleSelectChat}
                 onClose={() => sessions.setShowHistory(false)}
             />
+
+            {/* Duplicate chat warning */}
+            {isDuplicateChat && (
+                <div className="flex-shrink-0 mx-4 mt-2 p-2 bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-xs rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    This chat is also open in another window. Changes may overwrite each other.
+                </div>
+            )}
 
             {/* Messages or Empty State */}
             {sessions.messages.length === 0 ? (

@@ -10,18 +10,33 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
+import { AsyncLocalStorage } from "async_hooks";
+import {
+    getTokenForSession,
+    getTrelloAppKey,
+    isTrelloConfigured,
+    isValidSession,
+} from "../lib/trello-auth";
 
 const TRELLO_API_BASE = "https://api.trello.com/1";
 
 // =============================================================================
-// Types
+// Session context (per-request)
 // =============================================================================
 
-interface TrelloAuth {
-    apiKey: string;
-    apiToken: string;
-    authParams: string;
+const sessionStore = new AsyncLocalStorage<string>();
+
+/** Get auth query params for the current request's session */
+async function getAuthParams(): Promise<string> {
+    const session = sessionStore.getStore();
+    if (!session) throw new Error("No Trello session. Please connect your Trello account.");
+    const token = await getTokenForSession(session);
+    return `key=${getTrelloAppKey()}&token=${token}`;
 }
+
+// =============================================================================
+// Types
+// =============================================================================
 
 interface TrelloCard {
     id: string;
@@ -88,32 +103,14 @@ async function trelloRequest<T>(url: string, options?: RequestInit): Promise<T> 
 // MCP Server Setup
 // =============================================================================
 
-// Default auth from environment (can be overridden per-session)
-function getDefaultAuth(): TrelloAuth | null {
-    const apiKey = process.env.TRELLO_API_KEY;
-    const apiToken = process.env.TRELLO_TOKEN;
-
-    if (!apiKey || !apiToken) {
-        return null;
-    }
-
-    return {
-        apiKey,
-        apiToken,
-        authParams: `key=${apiKey}&token=${apiToken}`
-    };
-}
-
-// Create MCP server instance
 const mcpServer = new McpServer({
     name: "tasks",
     version: "1.0.0",
 });
 
-// We'll use default auth - per-request auth would require more complex session handling
-const auth = getDefaultAuth();
+const configured = isTrelloConfigured();
 
-if (auth) {
+if (configured) {
     // --- list_projects ---
     mcpServer.registerTool(
         "list_projects",
@@ -121,8 +118,9 @@ if (auth) {
             description: "List available projects",
         },
         async () => {
+            const authParams = await getAuthParams();
             const boards = await trelloRequest<TrelloBoard[]>(
-                `${TRELLO_API_BASE}/members/me/boards?${auth.authParams}`
+                `${TRELLO_API_BASE}/members/me/boards?${authParams}`
             );
             return {
                 content: [{
@@ -154,8 +152,9 @@ if (auth) {
             if (!projectId) {
                 throw new Error("Missing projectId. Use list_projects to find available projects.");
             }
+            const authParams = await getAuthParams();
             const lists = await trelloRequest<TrelloList[]>(
-                `${TRELLO_API_BASE}/boards/${projectId}/lists?${auth.authParams}`
+                `${TRELLO_API_BASE}/boards/${projectId}/lists?${authParams}`
             );
             return {
                 content: [{
@@ -179,8 +178,9 @@ if (auth) {
             },
         },
         async ({ projectId }) => {
+            const authParams = await getAuthParams();
             const labels = await trelloRequest<TrelloLabel[]>(
-                `${TRELLO_API_BASE}/boards/${projectId}/labels?${auth.authParams}`
+                `${TRELLO_API_BASE}/boards/${projectId}/labels?${authParams}`
             );
             return {
                 content: [{
@@ -208,9 +208,10 @@ if (auth) {
             },
         },
         async ({ projectId }) => {
+            const authParams = await getAuthParams();
             const [lists, cards] = await Promise.all([
-                trelloRequest<TrelloList[]>(`${TRELLO_API_BASE}/boards/${projectId}/lists?${auth.authParams}`),
-                trelloRequest<TrelloCard[]>(`${TRELLO_API_BASE}/boards/${projectId}/cards?${auth.authParams}`)
+                trelloRequest<TrelloList[]>(`${TRELLO_API_BASE}/boards/${projectId}/lists?${authParams}`),
+                trelloRequest<TrelloCard[]>(`${TRELLO_API_BASE}/boards/${projectId}/cards?${authParams}`)
             ]);
             const listNames = Object.fromEntries(lists.map(l => [l.id, l.name]));
             return {
@@ -248,13 +249,14 @@ if (auth) {
             },
         },
         async ({ projectId, statusId, name, description, due, labelIds }) => {
+            const authParams = await getAuthParams();
             const cardData: Record<string, string> = { idList: statusId, name, desc: description || "" };
             cardData.idBoard = projectId;
             if (due) cardData.due = due;
             if (labelIds) cardData.idLabels = labelIds;
 
             const card = await trelloRequest<TrelloCard>(
-                `${TRELLO_API_BASE}/cards?${auth.authParams}`,
+                `${TRELLO_API_BASE}/cards?${authParams}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -286,9 +288,10 @@ if (auth) {
             },
         },
         async ({ ticketId, projectId }) => {
+            const authParams = await getAuthParams();
             const [card, lists] = await Promise.all([
-                trelloRequest<TrelloCard>(`${TRELLO_API_BASE}/cards/${ticketId}?${auth.authParams}`),
-                trelloRequest<TrelloList[]>(`${TRELLO_API_BASE}/boards/${projectId}/lists?${auth.authParams}`)
+                trelloRequest<TrelloCard>(`${TRELLO_API_BASE}/cards/${ticketId}?${authParams}`),
+                trelloRequest<TrelloList[]>(`${TRELLO_API_BASE}/boards/${projectId}/lists?${authParams}`)
             ]);
             const list = lists.find(l => l.id === card.idList);
             return {
@@ -327,6 +330,7 @@ if (auth) {
             },
         },
         async ({ ticketId, name, description, statusId, due, dueComplete, labelIds }) => {
+            const authParams = await getAuthParams();
             const updates: Record<string, string | boolean | null> = {};
             if (name) updates.name = name;
             if (description) updates.desc = description;
@@ -336,7 +340,7 @@ if (auth) {
             if (labelIds !== undefined) updates.idLabels = labelIds;
 
             const card = await trelloRequest<TrelloCard>(
-                `${TRELLO_API_BASE}/cards/${ticketId}?${auth.authParams}`,
+                `${TRELLO_API_BASE}/cards/${ticketId}?${authParams}`,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -367,8 +371,9 @@ if (auth) {
             },
         },
         async ({ ticketId }) => {
+            const authParams = await getAuthParams();
             const card = await trelloRequest<TrelloCard>(
-                `${TRELLO_API_BASE}/cards/${ticketId}?${auth.authParams}`,
+                `${TRELLO_API_BASE}/cards/${ticketId}?${authParams}`,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -398,8 +403,9 @@ if (auth) {
             },
         },
         async ({ ticketId }) => {
+            const authParams = await getAuthParams();
             const comments = await trelloRequest<TrelloComment[]>(
-                `${TRELLO_API_BASE}/cards/${ticketId}/actions?filter=commentCard&${auth.authParams}`
+                `${TRELLO_API_BASE}/cards/${ticketId}/actions?filter=commentCard&${authParams}`
             );
             return {
                 content: [{
@@ -429,8 +435,9 @@ if (auth) {
             },
         },
         async ({ ticketId, comment }) => {
+            const authParams = await getAuthParams();
             const newComment = await trelloRequest<TrelloComment>(
-                `${TRELLO_API_BASE}/cards/${ticketId}/actions/comments?${auth.authParams}&text=${encodeURIComponent(comment)}`,
+                `${TRELLO_API_BASE}/cards/${ticketId}/actions/comments?${authParams}&text=${encodeURIComponent(comment)}`,
                 { method: "POST" }
             );
             return {
@@ -456,8 +463,9 @@ if (auth) {
             },
         },
         async ({ ticketId }) => {
+            const authParams = await getAuthParams();
             const attachments = await trelloRequest<TrelloAttachment[]>(
-                `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${auth.authParams}`
+                `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${authParams}`
             );
             return {
                 content: [{
@@ -496,6 +504,7 @@ if (auth) {
             },
         },
         async ({ ticketId, url, fileData, fileName, mimeType, name }) => {
+            const authParams = await getAuthParams();
             let attachment: TrelloAttachment;
 
             if (fileData) {
@@ -508,7 +517,7 @@ if (auth) {
                 if (name) formData.append("name", name);
 
                 const response = await fetch(
-                    `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${auth.authParams}`,
+                    `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${authParams}`,
                     { method: "POST", body: formData }
                 );
 
@@ -522,7 +531,7 @@ if (auth) {
                 if (name) params.append("name", name);
 
                 attachment = await trelloRequest<TrelloAttachment>(
-                    `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${auth.authParams}&${params}`,
+                    `${TRELLO_API_BASE}/cards/${ticketId}/attachments?${authParams}&${params}`,
                     { method: "POST" }
                 );
             } else {
@@ -554,8 +563,9 @@ if (auth) {
             },
         },
         async ({ ticketId, attachmentId }) => {
+            const authParams = await getAuthParams();
             const attachment = await trelloRequest<TrelloAttachment>(
-                `${TRELLO_API_BASE}/cards/${ticketId}/attachments/${attachmentId}?${auth.authParams}`
+                `${TRELLO_API_BASE}/cards/${ticketId}/attachments/${attachmentId}?${authParams}`
             );
             return {
                 content: [{
@@ -589,19 +599,47 @@ const transport = new StreamableHTTPTransport();
  * MCP endpoint - handles all MCP communication
  */
 tasksMcpRoutes.all("/", async (c) => {
-    // Check if configured
-    if (!auth) {
-        return c.json({
-            error: "Tasks MCP server not configured. Set TRELLO_API_KEY and TRELLO_TOKEN environment variables."
-        }, 503);
+    if (!configured) {
+        return c.json({ error: "Tasks MCP server not configured. Set TRELLO_APP_KEY environment variable." }, 503);
     }
 
-    // Connect server to transport if not already connected
+    // Extract session token from Authorization header
+    const authHeader = c.req.header("Authorization") || "";
+    const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+
+    // Require valid session token — return 401 so frontend shows Login button
+    if (!sessionToken || !(await isValidSession(sessionToken))) {
+        const url = new URL(c.req.url);
+        const proto = c.req.header("X-Forwarded-Proto") || url.protocol.replace(":", "");
+        const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        const scheme = isLocalhost ? proto : "https";
+        const base = `${scheme}://${url.host}`;
+        c.header("WWW-Authenticate", `Bearer scope="trello" resource_metadata="${base}/mcp/tasks/.well-known/oauth-protected-resource"`);
+        return c.json({ error: "Trello authentication required" }, 401);
+    }
+
     if (!mcpServer.isConnected()) {
         await mcpServer.connect(transport);
     }
 
-    return transport.handleRequest(c);
+    return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+});
+
+/**
+ * RFC9728 Protected Resource Metadata
+ * Points MCP clients to the Trello OAuth authorization server
+ */
+tasksMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
+    const url = new URL(c.req.url);
+    const proto = c.req.header("X-Forwarded-Proto") || url.protocol.replace(":", "");
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    const scheme = isLocalhost ? proto : "https";
+    const base = `${scheme}://${url.host}`;
+    return c.json({
+        resource: `${base}/mcp/tasks`,
+        authorization_servers: [`${base}/trello`],
+        scopes_supported: ["trello"],
+    });
 });
 
 /**
@@ -612,14 +650,14 @@ tasksMcpRoutes.get("/info", async (c) => {
         name: "tasks",
         version: "1.0.0",
         description: "Task and ticket management",
-        status: auth ? "ready" : "not_configured",
-        configured: !!auth,
-        tools: auth ? [
+        status: configured ? "ready" : "not_configured",
+        configured,
+        tools: configured ? [
             "list_projects", "list_statuses", "list_labels", "list_tickets",
             "create_ticket", "get_ticket", "update_ticket", "archive_ticket",
             "list_comments", "add_comment",
             "list_attachments", "add_attachment", "get_attachment"
         ] : [],
-        note: auth ? undefined : "Set TRELLO_API_KEY and TRELLO_TOKEN environment variables"
+        note: configured ? undefined : "Set TRELLO_APP_KEY environment variable"
     });
 });

@@ -107,6 +107,26 @@ export function McpServerSettings({ refreshKey }: McpServerSettingsProps) {
                 status: "connecting",
             });
         }
+
+        // Cross-pollinate: try tokens from connected servers on auth_required ones
+        setServers((current) => {
+            const connected = current.filter(s => s.server.status === "connected" && s.server.authToken);
+            const authRequired = current.filter(s => s.server.status === "auth_required");
+
+            for (const sibling of authRequired) {
+                const donor = connected.find(c => c.server.authToken);
+                if (donor?.server.authToken) {
+                    const siblingWithToken: McpServer = {
+                        ...sibling.server,
+                        authToken: donor.server.authToken,
+                        status: "connecting",
+                        error: undefined,
+                    };
+                    updateMcpServer(siblingWithToken).then(() => tryConnectServer(siblingWithToken));
+                }
+            }
+            return current;
+        });
     }
 
     async function tryConnectServer(server: McpServer) {
@@ -241,6 +261,23 @@ export function McpServerSettings({ refreshKey }: McpServerSettingsProps) {
 
             // Try to connect with token
             await tryConnectServer(updatedServer);
+
+            // Try token on all other auth_required servers (harmless 401 if incompatible)
+            const siblings = servers.filter(
+                (s) =>
+                    s.server.id !== serverId &&
+                    s.server.status === "auth_required"
+            );
+            for (const sibling of siblings) {
+                const siblingWithToken: McpServer = {
+                    ...sibling.server,
+                    authToken: token,
+                    status: "connecting",
+                    error: undefined,
+                };
+                await updateMcpServer(siblingWithToken);
+                await tryConnectServer(siblingWithToken);
+            }
         } catch (e) {
             setServers((prev) =>
                 prev.map((s) =>

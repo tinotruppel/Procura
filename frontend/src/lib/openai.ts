@@ -213,7 +213,8 @@ export async function sendMessageOpenAI(
     systemPrompt?: string,
     onDebugEvent?: StreamCallback,
     onTextChunk?: TextChunkCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    getIntervention?: () => string | null
 ): Promise<LLMResponse> {
     // Get enabled tools
     const toolDeclarations = await getEnabledToolDeclarations();
@@ -317,6 +318,12 @@ export async function sendMessageOpenAI(
                         toolResult.success ? toolResult.data : { error: toolResult.error }
                     ),
                 });
+            }
+
+            // Inject user intervention if one is pending
+            const intervention = getIntervention?.();
+            if (intervention) {
+                currentMessages.push({ role: "user", content: `[User intervention]: ${intervention}` });
             }
 
             // Continue loop to get final response

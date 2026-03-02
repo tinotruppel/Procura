@@ -16,7 +16,8 @@ export async function sendMessageGemini(
     systemPrompt?: string,
     onDebugEvent?: StreamCallback,
     onTextChunk?: TextChunkCallback,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    getIntervention?: () => string | null
 ): Promise<LLMResponse> {
     const genAI = new GoogleGenerativeAI(apiKey);
 
@@ -173,6 +174,12 @@ export async function sendMessageGemini(
                         : { error: toolResult.error },
                 },
             });
+        }
+
+        // Inject user intervention if one is pending
+        const intervention = getIntervention?.();
+        if (intervention) {
+            functionResponses.push({ text: `[User intervention]: ${intervention}` });
         }
 
         // Send function results back to Gemini

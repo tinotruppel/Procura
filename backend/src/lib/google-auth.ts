@@ -108,3 +108,33 @@ export async function getAccessTokenForSession(sessionToken: string): Promise<st
     cacheAccessToken(sessionToken, data.access_token, data.expires_in);
     return data.access_token;
 }
+
+// =============================================================================
+// RFC9728 OAuth Discovery Helpers (shared by all Google MCP servers)
+// =============================================================================
+
+import type { Context } from "hono";
+
+/** Derive base URL from request */
+function getBaseUrl(c: Context): string {
+    const url = new URL(c.req.url);
+    const proto = c.req.header("X-Forwarded-Proto") || url.protocol.replace(":", "");
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    return `${isLocalhost ? proto : "https"}://${url.host}`;
+}
+
+/** Build WWW-Authenticate header with resource_metadata URL */
+export function buildGoogleWwwAuthenticate(c: Context, mcpPath: string): string {
+    const base = getBaseUrl(c);
+    return `Bearer scope="google" resource_metadata="${base}${mcpPath}/.well-known/oauth-protected-resource"`;
+}
+
+/** Build RFC9728 protected resource metadata (for .well-known endpoint) */
+export function buildGoogleResourceMetadata(c: Context, mcpPath: string): object {
+    const base = getBaseUrl(c);
+    return {
+        resource: `${base}${mcpPath}`,
+        authorization_servers: [`${base}/google`],
+        scopes_supported: ["google"],
+    };
+}

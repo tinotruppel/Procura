@@ -82,6 +82,12 @@ mcpProxyRoutes.post("/", async (c) => {
             c.header("Mcp-Session-Id", mcpSessionId);
         }
 
+        // Forward WWW-Authenticate for 401s (OAuth discovery)
+        const wwwAuth = response.headers.get("www-authenticate");
+        if (wwwAuth) {
+            c.header("WWW-Authenticate", wwwAuth);
+        }
+
         const contentType = response.headers.get("content-type");
         if (contentType) {
             c.header("Content-Type", contentType);

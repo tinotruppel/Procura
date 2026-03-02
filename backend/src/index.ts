@@ -43,6 +43,7 @@ import { googleSlidesMcpRoutes } from "./routes/google-slides-mcp";
 import { gmailMcpRoutes } from "./routes/gmail-mcp";
 import { googleCalendarMcpRoutes } from "./routes/google-calendar-mcp";
 import { googleOAuthRoutes } from "./routes/google-oauth";
+import { trelloOAuthRoutes } from "./routes/trello-oauth";
 import { mcpDirectoryRoutes } from "./routes/mcp-directory";
 import { getConfig } from "./config";
 import { getPool } from "./db/connection";
@@ -58,12 +59,21 @@ app.use("*", rateLimitMiddleware);
 app.use("/sync/*", authMiddleware);
 app.use("/mcp-proxy/*", authMiddleware);
 app.use("/mcp-directory/*", authMiddleware);
-app.use("/mcp/*", authMiddleware);
+app.use("/mcp/*", async (c, next) => {
+    // Skip auth for .well-known discovery endpoints (RFC9728 — must be public for OAuth flow)
+    if (c.req.path.includes("/.well-known/")) {
+        return next();
+    }
+    return authMiddleware(c, next);
+});
 app.use("/cron/*", authMiddleware);
-app.use("/auth/google/status", authMiddleware);
-app.use("/auth/google/disconnect", authMiddleware);
-// Note: /auth/google/callback is NOT auth-protected — Google redirects users there
-// Note: /.well-known/*, /authorize, /token, /register are NOT auth-protected — OAuth flow endpoints
+app.use("/google/auth/google/status", authMiddleware);
+app.use("/google/auth/google/disconnect", authMiddleware);
+app.use("/trello/status", authMiddleware);
+app.use("/trello/disconnect", authMiddleware);
+// Note: /google/auth/google/callback and /trello/callback are NOT auth-protected — provider redirects users there
+// Note: /trello/token-store is NOT auth-protected — receives token from callback page
+// Note: /.well-known/*, /oauth/authorize, /oauth/token, /oauth/register are NOT auth-protected — OAuth flow endpoints
 
 // Mount routes
 app.route("/sync", syncRoutes);
@@ -83,8 +93,9 @@ app.route("/mcp/google-sheets", googleSheetsMcpRoutes);
 app.route("/mcp/google-slides", googleSlidesMcpRoutes);
 app.route("/mcp/gmail", gmailMcpRoutes);
 app.route("/mcp/google-calendar", googleCalendarMcpRoutes);
-// OAuth AS: mount at root so endpoints are at /.well-known/*, /authorize, /token, /register, /auth/google/*
-app.route("/", googleOAuthRoutes);
+// OAuth Authorization Servers — mounted at provider-specific prefixes for clean separation
+app.route("/google", googleOAuthRoutes);
+app.route("/trello", trelloOAuthRoutes);
 
 // Health check with database connection test and service listing
 app.get("/health", async (c) => {

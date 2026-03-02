@@ -1,30 +1,34 @@
 /**
- * Google OAuth Authorization Server (RFC8414 / MCP-compliant)
+ * Trello OAuth Authorization Server (RFC8414 / MCP-compliant)
  *
- * Acts as a standard OAuth 2.1 Authorization Server that proxies to Google OAuth.
- * Any MCP client (Claude Desktop, Cursor, Procura, etc.) can authenticate via
- * the standard OAuth flow — our backend handles the Google integration transparently.
+ * Acts as a standard OAuth 2.1 Authorization Server that proxies to Trello's
+ * token-based authorization. Any MCP client can authenticate via the standard
+ * OAuth flow — our backend handles the Trello integration transparently.
+ *
+ * Note: Trello uses an implicit token flow (token returned in URL fragment),
+ * not a standard OAuth 2.0 authorization code flow. Our callback page uses
+ * client-side JavaScript to extract the token and POST it back to the server.
  *
  * Endpoints:
  *   GET  /.well-known/oauth-authorization-server  — RFC8414 metadata
  *   POST /register                                — RFC7591 dynamic client registration
- *   GET  /authorize                               — Authorization endpoint (redirects to Google)
- *   GET  /auth/google/callback                    — Google callback (internal redirect)
+ *   GET  /authorize                               — Authorization endpoint (redirects to Trello)
+ *   GET  /auth/trello/callback                    — Trello callback (extracts token from fragment)
+ *   POST /auth/trello/token-store                 — Receives token from callback page
  *   POST /token                                   — Token endpoint (returns session token)
- *   GET  /auth/google/status                      — Check connection status
- *   DELETE /auth/google/disconnect                — Remove stored tokens
+ *   GET  /auth/trello/status                      — Check connection status
+ *   DELETE /auth/trello/disconnect                — Remove stored tokens
  */
 
 import { Hono } from "hono";
 import { randomBytes, createHash, randomUUID } from "crypto";
 import {
-    isGoogleConfigured,
-    getGoogleClientId,
-    getGoogleClientSecret,
-    storeRefreshToken,
+    isTrelloConfigured,
+    getTrelloAppKey,
+    storeUserToken,
     hasConnected,
     deleteTokensByUser,
-} from "../lib/google-auth";
+} from "../lib/trello-auth";
 
 // =============================================================================
 // In-memory stores (transient, short-lived)
@@ -32,7 +36,6 @@ import {
 
 interface RegisteredClient {
     clientId: string;
-    clientSecret?: string;
     redirectUris: string[];
     clientName?: string;
     createdAt: number;
@@ -64,17 +67,6 @@ const authCodes = new Map<string, AuthCode>(); // keyed by auth code
 const CODE_TTL_MS = 5 * 60 * 1000; // 5 min
 const PENDING_TTL_MS = 10 * 60 * 1000; // 10 min
 
-const GOOGLE_SCOPES = [
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/presentations",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/drive.metadata.readonly",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/calendar.events",
-].join(" ");
-
 /** Periodic cleanup of expired entries */
 function cleanupExpiredEntries(): void {
     const now = Date.now();
@@ -93,7 +85,6 @@ setInterval(cleanupExpiredEntries, 60_000);
 
 function getBaseUrl(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
     const url = new URL(c.req.url);
-    // Behind a reverse proxy (nginx), use X-Forwarded-Proto to get the real protocol
     const proto = c.req.header("X-Forwarded-Proto") || url.protocol.replace(":", "");
     const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
     const scheme = isLocalhost ? proto : "https";
@@ -109,7 +100,6 @@ function verifyPkce(codeVerifier: string, codeChallenge: string, method: string)
         const hash = createHash("sha256").update(codeVerifier).digest("base64url");
         return hash === codeChallenge;
     }
-    // plain method (not recommended but required by spec)
     return codeVerifier === codeChallenge;
 }
 
@@ -117,31 +107,31 @@ function verifyPkce(codeVerifier: string, codeChallenge: string, method: string)
 // Routes
 // =============================================================================
 
-export const googleOAuthRoutes = new Hono();
+export const trelloOAuthRoutes = new Hono();
 
 /**
  * GET /.well-known/oauth-authorization-server
  * RFC8414 Authorization Server Metadata
  */
-googleOAuthRoutes.get("/.well-known/oauth-authorization-server", (c) => {
+trelloOAuthRoutes.get("/.well-known/oauth-authorization-server", (c) => {
     const base = getBaseUrl(c);
     return c.json({
-        issuer: `${base}/google`,
-        authorization_endpoint: `${base}/google/oauth/authorize`,
-        token_endpoint: `${base}/google/oauth/token`,
-        registration_endpoint: `${base}/google/oauth/register`,
+        issuer: base,
+        authorization_endpoint: `${base}/trello/oauth/authorize`,
+        token_endpoint: `${base}/trello/oauth/token`,
+        registration_endpoint: `${base}/trello/oauth/register`,
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
         code_challenge_methods_supported: ["S256"],
-        scopes_supported: ["google"],
+        scopes_supported: ["trello"],
     });
 });
 
 /**
- * POST /register
+ * POST /oauth/register
  * RFC7591 Dynamic Client Registration
  */
-googleOAuthRoutes.post("/oauth/register", async (c) => {
+trelloOAuthRoutes.post("/oauth/register", async (c) => {
     const body = await c.req.json() as {
         redirect_uris?: string[];
         client_name?: string;
@@ -174,11 +164,11 @@ googleOAuthRoutes.post("/oauth/register", async (c) => {
 });
 
 /**
- * GET /authorize
- * Authorization endpoint — validates PKCE, stores pending auth, redirects to Google
+ * GET /oauth/authorize
+ * Authorization endpoint — validates PKCE, stores pending auth, redirects to Trello
  */
-googleOAuthRoutes.get("/oauth/authorize", (c) => {
-    if (!isGoogleConfigured()) return c.json({ error: "Google OAuth not configured" }, 503);
+trelloOAuthRoutes.get("/oauth/authorize", (c) => {
+    if (!isTrelloConfigured()) return c.json({ error: "Trello not configured" }, 503);
 
     const clientId = c.req.query("client_id");
     const redirectUri = c.req.query("redirect_uri");
@@ -186,9 +176,8 @@ googleOAuthRoutes.get("/oauth/authorize", (c) => {
     const codeChallenge = c.req.query("code_challenge");
     const codeChallengeMethod = c.req.query("code_challenge_method") || "S256";
     const state = c.req.query("state") || "";
-    const scope = c.req.query("scope") || "google";
+    const scope = c.req.query("scope") || "trello";
 
-    // Validate required params
     if (!clientId || !redirectUri || !codeChallenge) {
         return c.json({ error: "invalid_request", error_description: "Missing client_id, redirect_uri, or code_challenge" }, 400);
     }
@@ -196,13 +185,12 @@ googleOAuthRoutes.get("/oauth/authorize", (c) => {
         return c.json({ error: "unsupported_response_type" }, 400);
     }
 
-    // Validate client registration (if registered)
     const client = registeredClients.get(clientId);
     if (client && !client.redirectUris.includes(redirectUri)) {
         return c.json({ error: "invalid_request", error_description: "redirect_uri not registered" }, 400);
     }
 
-    // Validate redirect URI (must be localhost or HTTPS per MCP spec)
+    // Validate redirect URI
     try {
         const uri = new URL(redirectUri);
         const isLocalhost = uri.hostname === "localhost" || uri.hostname === "127.0.0.1";
@@ -215,7 +203,7 @@ googleOAuthRoutes.get("/oauth/authorize", (c) => {
         return c.json({ error: "invalid_request", error_description: "Invalid redirect_uri" }, 400);
     }
 
-    // Generate our internal state to map Google callback back to this pending auth
+    // Store pending auth
     const internalState = generateSecureCode();
     pendingAuths.set(internalState, {
         clientId,
@@ -227,86 +215,102 @@ googleOAuthRoutes.get("/oauth/authorize", (c) => {
         createdAt: Date.now(),
     });
 
-    // Redirect to Google OAuth
+    // Redirect to Trello authorization
     const base = getBaseUrl(c);
-    const googleParams = new URLSearchParams({
-        client_id: getGoogleClientId(),
-        redirect_uri: `${base}/google/auth/google/callback`,
-        response_type: "code",
-        scope: GOOGLE_SCOPES,
-        access_type: "offline",
-        prompt: "consent",
-        state: internalState,
+    const trelloParams = new URLSearchParams({
+        key: getTrelloAppKey(),
+        callback_method: "fragment",
+        return_url: `${base}/trello/callback?state=${encodeURIComponent(internalState)}`,
+        scope: "read,write",
+        expiration: "never",
+        name: "Procura",
+        response_type: "fragment",
     });
 
-    return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${googleParams}`);
+    return c.redirect(`https://trello.com/1/authorize?${trelloParams}`);
 });
 
 /**
- * GET /auth/google/callback
- * Google redirects here. Exchanges code → stores tokens → redirects to client redirect_uri with auth code.
+ * GET /auth/trello/callback
+ * Trello redirects here with token in URL fragment (#token=...).
+ * Since fragments are client-side only, we use JS to extract and POST it.
  */
-googleOAuthRoutes.get("/auth/google/callback", async (c) => {
-    const googleCode = c.req.query("code");
-    const internalState = c.req.query("state");
-    const error = c.req.query("error");
+trelloOAuthRoutes.get("/callback", (c) => {
+    const internalState = c.req.query("state") || "";
 
-    if (error) return c.text(`Authorization denied: ${error}`, 400);
-    if (!googleCode || !internalState) return c.text("Missing authorization code or state", 400);
+    // Serve an HTML page that extracts the token from the fragment and POSTs it
+    const base = getBaseUrl(c);
+    const html = `<!DOCTYPE html><html><head><title>Authenticating...</title></head>
+<body>
+<p style="font-family:system-ui;text-align:center;margin-top:40vh;color:#666">Connecting to Trello...</p>
+<script>
+(function() {
+    var hash = window.location.hash.substring(1);
+    var token = null;
+    hash.split("&").forEach(function(part) {
+        var kv = part.split("=");
+        if (kv[0] === "token") token = kv[1];
+    });
+    if (!token) {
+        document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;margin-top:40vh;color:#c00">Authorization failed: no token received.</p>';
+        return;
+    }
+    fetch(${JSON.stringify(`${base}/trello/token-store`)}, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token, state: ${JSON.stringify(internalState)} })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.code) {
+            window.opener.postMessage({ type: "oauth-callback", code: data.code, state: data.clientState }, "*");
+            setTimeout(function() { window.close(); }, 1000);
+        } else {
+            document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;margin-top:40vh;color:#c00">Error: ' + (data.error || 'Unknown error') + '</p>';
+        }
+    })
+    .catch(function(err) {
+        document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;margin-top:40vh;color:#c00">Error: ' + err.message + '</p>';
+    });
+})();
+</script>
+</body></html>`;
+    return c.html(html);
+});
 
-    const pending = pendingAuths.get(internalState);
-    if (!pending) return c.text("Invalid or expired authorization request", 400);
-    pendingAuths.delete(internalState);
+/**
+ * POST /auth/trello/token-store
+ * Receives token from callback page, stores it, returns auth code for PKCE exchange.
+ */
+trelloOAuthRoutes.post("/token-store", async (c) => {
+    const body = await c.req.json() as { token?: string; state?: string };
 
-    // Check TTL
-    if (Date.now() - pending.createdAt > PENDING_TTL_MS) {
-        return c.text("Authorization request expired", 400);
+    if (!body.token || !body.state) {
+        return c.json({ error: "Missing token or state" }, 400);
     }
 
-    const base = getBaseUrl(c);
+    const pending = pendingAuths.get(body.state);
+    if (!pending) {
+        return c.json({ error: "Invalid or expired authorization request" }, 400);
+    }
+    pendingAuths.delete(body.state);
+
+    if (Date.now() - pending.createdAt > PENDING_TTL_MS) {
+        return c.json({ error: "Authorization request expired" }, 400);
+    }
 
     try {
-        // Exchange Google code for tokens
-        const response = await fetch("https://oauth2.googleapis.com/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                client_id: getGoogleClientId(),
-                client_secret: getGoogleClientSecret(),
-                code: googleCode,
-                grant_type: "authorization_code",
-                redirect_uri: `${base}/google/auth/google/callback`,
-            }).toString(),
-        });
-
-        if (!response.ok) {
-            console.error("Google token exchange failed:", await response.text());
-            return redirectWithError(c, pending.redirectUri, pending.clientState, "server_error", "Failed to exchange authorization code with Google");
-        }
-
-        const data = (await response.json()) as {
-            access_token: string;
-            refresh_token?: string;
-            expires_in: number;
-        };
-
-        if (!data.refresh_token) {
-            return redirectWithError(c, pending.redirectUri, pending.clientState, "server_error", "No refresh token from Google. Revoke access at myaccount.google.com and retry.");
-        }
-
-        // Get user identity from Google to use as userId
-        const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-            headers: { Authorization: `Bearer ${data.access_token}` },
-        });
-        const userInfo = userInfoRes.ok
-            ? (await userInfoRes.json()) as { email?: string; id?: string }
+        // Get Trello user identity to use as userId
+        const memberRes = await fetch(`https://api.trello.com/1/members/me?key=${getTrelloAppKey()}&token=${body.token}&fields=username,email`);
+        const memberInfo = memberRes.ok
+            ? (await memberRes.json()) as { username?: string; email?: string; id?: string }
             : { id: randomUUID() };
-        const userId = userInfo.email || userInfo.id || randomUUID();
+        const userId = memberInfo.email || memberInfo.username || memberInfo.id || randomUUID();
 
-        // Store refresh token (encrypted) and get session token
-        const sessionToken = await storeRefreshToken(userId, data.refresh_token);
+        // Store the Trello token (encrypted) and get session token
+        const sessionToken = await storeUserToken(userId, body.token);
 
-        // Generate a short-lived auth code that maps to the session token
+        // Generate auth code for PKCE exchange
         const authCode = generateSecureCode();
         authCodes.set(authCode, {
             sessionToken,
@@ -317,26 +321,18 @@ googleOAuthRoutes.get("/auth/google/callback", async (c) => {
             createdAt: Date.now(),
         });
 
-        // Send code+state back to opener via postMessage (works for extension + PWA)
-        const html = `<!DOCTYPE html><html><head><title>Authenticating...</title></head>
-<body><p style="font-family:system-ui;text-align:center;margin-top:40vh;color:#666">Authentication complete. This window will close automatically.</p>
-<script>
-window.opener.postMessage({type:"oauth-callback",code:${JSON.stringify(authCode)},state:${JSON.stringify(pending.clientState)}},"*");
-setTimeout(()=>window.close(),1000);
-</script></body></html>`;
-        return c.html(html);
-
+        return c.json({ code: authCode, clientState: pending.clientState });
     } catch (err) {
-        console.error("OAuth callback error:", err);
-        return redirectWithError(c, pending.redirectUri, pending.clientState, "server_error", "Internal error during authorization");
+        console.error("Trello token-store error:", err);
+        return c.json({ error: "Failed to store token" }, 500);
     }
 });
 
 /**
- * POST /token
+ * POST /oauth/token
  * Token endpoint — validates PKCE code_verifier, returns session token as access_token.
  */
-googleOAuthRoutes.post("/oauth/token", async (c) => {
+trelloOAuthRoutes.post("/oauth/token", async (c) => {
     const contentType = c.req.header("Content-Type") || "";
 
     let params: URLSearchParams;
@@ -364,20 +360,16 @@ googleOAuthRoutes.post("/oauth/token", async (c) => {
         return c.json({ error: "invalid_grant", error_description: "Invalid or expired authorization code" }, 400);
     }
 
-    // Single-use: delete immediately
     authCodes.delete(code);
 
-    // Validate TTL
     if (Date.now() - authCode.createdAt > CODE_TTL_MS) {
         return c.json({ error: "invalid_grant", error_description: "Authorization code expired" }, 400);
     }
 
-    // Validate redirect_uri matches
     if (redirectUri && redirectUri !== authCode.redirectUri) {
         return c.json({ error: "invalid_grant", error_description: "redirect_uri mismatch" }, 400);
     }
 
-    // Validate PKCE
     if (!verifyPkce(codeVerifier, authCode.codeChallenge, authCode.codeChallengeMethod)) {
         return c.json({ error: "invalid_grant", error_description: "PKCE verification failed" }, 400);
     }
@@ -385,44 +377,25 @@ googleOAuthRoutes.post("/oauth/token", async (c) => {
     return c.json({
         access_token: authCode.sessionToken,
         token_type: "Bearer",
-        // No expiry — session token is valid until user disconnects
     });
 });
 
 /**
- * GET /auth/google/status?userId=xxx
+ * GET /auth/trello/status?userId=xxx
  */
-googleOAuthRoutes.get("/auth/google/status", async (c) => {
+trelloOAuthRoutes.get("/status", async (c) => {
     const userId = c.req.query("userId");
     if (!userId) return c.json({ error: "userId query parameter is required" }, 400);
     const connected = await hasConnected(userId);
-    return c.json({ configured: isGoogleConfigured(), connected });
+    return c.json({ configured: isTrelloConfigured(), connected });
 });
 
 /**
- * DELETE /auth/google/disconnect?userId=xxx
+ * DELETE /auth/trello/disconnect?userId=xxx
  */
-googleOAuthRoutes.delete("/auth/google/disconnect", async (c) => {
+trelloOAuthRoutes.delete("/disconnect", async (c) => {
     const userId = c.req.query("userId");
     if (!userId) return c.json({ error: "userId query parameter is required" }, 400);
     await deleteTokensByUser(userId);
     return c.json({ disconnected: true });
 });
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function redirectWithError(
-    c: { redirect: (url: string) => Response },
-    redirectUri: string,
-    state: string,
-    error: string,
-    description: string
-): Response {
-    const url = new URL(redirectUri);
-    url.searchParams.set("error", error);
-    url.searchParams.set("error_description", description);
-    if (state) url.searchParams.set("state", state);
-    return c.redirect(url.toString());
-}

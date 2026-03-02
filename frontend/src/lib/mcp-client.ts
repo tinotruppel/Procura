@@ -163,7 +163,14 @@ async function sendMcpFetch(
     const mcpHeaders = buildMcpHeaders(server);
     const useProxy = proxyConfig?.enabled && proxyConfig?.url;
 
-    if (useProxy) {
+    // Skip proxy for same-origin MCPs (our own backend) — direct is faster and avoids header issues
+    const isSameOrigin = useProxy && (() => {
+        try {
+            return new URL(server.url).origin === new URL(proxyConfig.url).origin;
+        } catch { return false; }
+    })();
+
+    if (useProxy && !isSameOrigin) {
         const proxyHeaders: Record<string, string> = {
             "Content-Type": "application/json",
         };
@@ -181,6 +188,12 @@ async function sendMcpFetch(
                 headers: mcpHeaders,
             }),
         });
+    }
+
+    // Direct request: for same-origin MCPs or when proxy is disabled
+    // Include API key header for authenticated backend endpoints
+    if (isSameOrigin && proxyConfig?.apiKey) {
+        mcpHeaders["X-API-Key"] = proxyConfig.apiKey;
     }
 
     return fetch(server.url, {
@@ -228,16 +241,9 @@ async function sendRequest<T>(
                 }
             }
 
-            // Fallback: If no resource_metadata, construct well-known URL
-            // Many servers (like Atlassian) use .well-known/oauth-authorization-server
             if (!authError.resourceMetadataUrl) {
-                try {
-                    const serverOrigin = new URL(server.url).origin;
-                    authError.resourceMetadataUrl = `${serverOrigin}/.well-known/oauth-authorization-server`;
-                    authError.useDirectAuthServer = true; // Flag to skip resource metadata fetch
-                } catch {
-                    // URL parsing failed, leave without fallback
-                }
+                authError.message = "Server returned 401 but no WWW-Authenticate resource_metadata URL. " +
+                    "Check that the MCP proxy forwards the WWW-Authenticate header.";
             }
 
             throw authError;
