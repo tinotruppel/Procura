@@ -1,6 +1,6 @@
 {
     "name": "procura",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "private": true,
     "description": "AI-powered browser extension & PWA with multi-provider LLM support, tool orchestration, and end-to-end encrypted sync.",
     "license": "MIT",
