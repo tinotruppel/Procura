@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Release script: bumps version in all package.json files, commits, and tags.
-# Usage: bash scripts/release.sh <version>
+# Usage: bash scripts/release.sh <version> [--cws]
 # Example: bash scripts/release.sh 0.2.0
+#          bash scripts/release.sh 0.2.0 --cws  (also publish to Chrome Web Store)
 
-VERSION="$1"
+PUBLISH_CWS=false
+VERSION=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --cws) PUBLISH_CWS=true ;;
+        *)     VERSION="$arg" ;;
+    esac
+done
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: bash scripts/release.sh <version>"
+    echo "Usage: bash scripts/release.sh <version> [--cws]"
     echo "Example: bash scripts/release.sh 0.2.0"
     exit 1
 fi
@@ -78,4 +87,11 @@ rm -f "$ROOT/$ZIP_NAME"
 echo ""
 echo "✅ Released v$VERSION"
 echo "   → GitHub Release: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/releases/tag/v$VERSION"
+
+# Optional: Publish to Chrome Web Store
+if [ "$PUBLISH_CWS" = true ]; then
+    echo ""
+    echo "Publishing to Chrome Web Store (Trusted Testers)..."
+    bash "$ROOT/scripts/cws-publish.sh" --skip-build
+fi
 
