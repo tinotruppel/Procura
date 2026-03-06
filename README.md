@@ -144,3 +144,16 @@ This runs: unit & integration tests with coverage, ESLint, Semgrep, npm audit, a
 ## 📄 License
 
 MIT
+
+---
+
+## ⚠️ Vibe Coding Disclaimer
+
+The source code in this repository was **generated entirely using AI coding assistants**. The author has reviewed, tested, and curated the output, but does not guarantee correctness, completeness, or fitness for any particular purpose.
+
+As stated in the [MIT License](LICENSE):
+
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+**Use at your own risk.**
+
