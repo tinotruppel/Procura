@@ -73,13 +73,15 @@ describe('MessageList', () => {
             expect(boldElement.tagName).toBe('STRONG');
         });
 
-        it('should render code blocks', () => {
+        it('should render code blocks with syntax highlighting', () => {
             const messages: ChatMessage[] = [
                 { role: 'model', content: '```javascript\nconst x = 1;\n```' }
             ];
 
             render(<MessageList messages={messages} />);
-            expect(screen.getByText('const x = 1;')).toBeInTheDocument();
+            const codeEl = document.querySelector('code.language-javascript');
+            expect(codeEl).toBeInTheDocument();
+            expect(codeEl?.textContent).toContain('const x = 1;');
         });
     });
 

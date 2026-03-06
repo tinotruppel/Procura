@@ -4,12 +4,46 @@ import { Calculator, Camera, Globe, MapPin, Server, CheckCircle, XCircle, Chevro
 import React, { useState, useRef, useEffect, useMemo, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import css from "highlight.js/lib/languages/css";
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import xml from "highlight.js/lib/languages/xml";
+import sql from "highlight.js/lib/languages/sql";
+import yaml from "highlight.js/lib/languages/yaml";
+import markdown from "highlight.js/lib/languages/markdown";
+import diff from "highlight.js/lib/languages/diff";
+import "highlight.js/styles/github-dark.min.css";
 import { LangfuseConfig } from "@/lib/storage";
 import { sendLangfuseScore } from "@/lib/langfuse";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { MarpitSlides } from "./MarpitSlides";
 import { parse as twemojiParse } from "twemoji-parser";
 import { getFile } from "@/lib/file-store";
+
+// Register languages
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("js", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("py", python);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+hljs.registerLanguage("shell", bash);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("yml", yaml);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("md", markdown);
+hljs.registerLanguage("diff", diff);
 
 /**
  * Replace Unicode emojis with Twemoji images for consistent rendering
@@ -375,7 +409,27 @@ const MemoizedMarkdown = memo(function MemoizedMarkdown({ content }: { content: 
                 return <MarpitSlides key={`marpit-${hashCode(codeString)}`} code={codeString} />;
             }
 
-            // Default code rendering (block and inline)
+            // Block code (inside <pre>) — apply syntax highlighting
+            const isBlock = className?.startsWith("language-");
+            if (isBlock) {
+                let highlighted: string;
+                try {
+                    highlighted = language && hljs.getLanguage(language)
+                        ? hljs.highlight(codeString, { language }).value
+                        : hljs.highlightAuto(codeString).value;
+                } catch {
+                    highlighted = codeString;
+                }
+                return (
+                    <code
+                        className={cn("hljs", className)}
+                        dangerouslySetInnerHTML={{ __html: highlighted }}
+                        {...props}
+                    />
+                );
+            }
+
+            // Inline code — no highlighting
             return (
                 <code className={className} {...props}>
                     {children}
