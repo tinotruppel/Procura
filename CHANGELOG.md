@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-06
+
+### Added
+
+- **BYOK Vault Secrets** — Bring Your Own Key vault for server-side secret management with AES-256-GCM encryption
+- **Vault Secrets UI** — New `VaultSecrets` component for managing encrypted secrets in Cloud Settings
+- **Vault Resolver** — Per-request secret resolution with environment variable fallback for MCP tools
+- **Structured Logging** — Logger with configurable levels (error/warn/info/debug) via `LOG_LEVEL` env var
+- **HTTP Request Logger** — Middleware logging incoming/outgoing requests with method, path, status, and duration
+- **Syntax Highlighting** — Code blocks in chat now render with highlight.js (JS, TS, Python, CSS, JSON, Bash, HTML, SQL, YAML, Markdown, Diff)
+- **Vibe Coding Disclaimer** — README disclosure that source code is AI-generated
+
+### Changed
+
+- **Auth Middleware** — Updated for BYOK key acceptance (any non-empty API key, hashed as key_id)
+- **Weather MCP** — Refactored to use vault resolver for dynamic API key lookup instead of static env vars
+- **CORS Configuration** — Added `Mcp-Session-Id`, `MCP-Protocol-Version`, and `X-API-Key` to allowed headers
+
+### Fixed
+
+- **MCP CORS Errors** — Fixed preflight failures when PWA connects to MCP endpoints directly
+- **Vault Decryption Errors** — `readEncryptedOrFallback` now catches decryption failures gracefully instead of crashing
+
+### Removed
+
+- **Dead Vault-Locked Code** — Removed unreachable "vault locked" branches (SecurityGate guarantees unlock)
+- **Unused Identity Permission** — Removed `chrome.identity` from extension manifest (OAuth is now server-side)
+
 ## [0.1.2] - 2026-03-04
 
 ### Added
