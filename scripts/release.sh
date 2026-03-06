@@ -57,6 +57,19 @@ for PKG in "$ROOT/package.json" "$ROOT/frontend/package.json" "$ROOT/backend/pac
     fi
 done
 
+# Update Chrome extension manifest.json version
+MANIFEST="$ROOT/frontend/public/manifest.json"
+if [ -f "$MANIFEST" ]; then
+    node -e "
+        const fs = require('fs');
+        const m = JSON.parse(fs.readFileSync('$MANIFEST', 'utf8'));
+        const old = m.version;
+        m.version = '$VERSION';
+        fs.writeFileSync('$MANIFEST', JSON.stringify(m, null, 4) + '\n');
+        console.log('  manifest.json: ' + old + ' → $VERSION');
+    "
+fi
+
 echo ""
 echo "Committing and tagging ..."
 git -C "$ROOT" add -A
