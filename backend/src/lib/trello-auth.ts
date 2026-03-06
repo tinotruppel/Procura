@@ -39,20 +39,20 @@ export function getTrelloAppKey(): string {
  * Store a Trello user token (encrypted) and return a session token.
  * Reuses oauth-session's refresh_token column since Trello tokens are long-lived.
  */
-export function storeUserToken(userId: string, userToken: string): Promise<string> {
-    return storeToken(userId, PROVIDER, userToken);
+export function storeUserToken(keyId: string, userToken: string): Promise<string> {
+    return storeToken(keyId, PROVIDER, userToken);
 }
 
 export function isValidSession(sessionToken: string): Promise<boolean> {
     return checkSession(sessionToken, PROVIDER);
 }
 
-export function hasConnected(userId: string): Promise<boolean> {
-    return checkConnected(userId, PROVIDER);
+export function hasConnected(keyId: string): Promise<boolean> {
+    return checkConnected(keyId, PROVIDER);
 }
 
-export function deleteTokensByUser(userId: string): Promise<void> {
-    return deleteTokens(userId, PROVIDER);
+export function deleteTokensByUser(keyId: string): Promise<void> {
+    return deleteTokens(keyId, PROVIDER);
 }
 
 // =============================================================================

@@ -264,7 +264,9 @@ describe("Cloud Config", () => {
             expect(stored.apiKey).toBe("plain-key");
         });
 
-        it("should store config without apiKey when vault is locked", async () => {
+        it("should always encrypt when vault is configured (SecurityGate guarantees unlock)", async () => {
+            // Even if isVaultUnlocked returns false, setCloudConfig now always encrypts
+            // because SecurityGate guarantees vault is unlocked when UI is reachable
             mockedIsVaultUnlocked.mockReturnValue(false);
 
             await setCloudConfig({
@@ -273,7 +275,7 @@ describe("Cloud Config", () => {
                 apiKey: "secret-key",
             });
 
-            expect(mockedEncryptWithVault).not.toHaveBeenCalled();
+            expect(mockedEncryptWithVault).toHaveBeenCalledWith({ apiKey: "secret-key" });
             const stored = mockStorage[STORAGE_KEYS.CLOUD_CONFIG] as Record<string, unknown>;
             expect(stored.apiKey).toBe("");
             expect(stored.enabled).toBe(true);

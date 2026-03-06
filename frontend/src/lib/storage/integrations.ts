@@ -56,14 +56,8 @@ export async function setMcpServers(servers: StoredMcpServer[]): Promise<void> {
         });
         return;
     }
+    // Vault configured (SecurityGate guarantees unlocked)
     const sanitized = servers.map(({ authToken: _authToken, ...rest }) => rest);
-    if (!isVaultUnlocked()) {
-        await storage.set({
-            [STORAGE_KEYS.MCP_SERVERS]: sanitized,
-            [STORAGE_KEYS.SETTINGS_LAST_MODIFIED]: Date.now(),
-        });
-        return;
-    }
     const tokens: Record<string, string> = {};
     for (const server of servers) {
         if (server.authToken) {
@@ -168,14 +162,8 @@ export async function setMcpProxyConfig(config: McpProxyConfig): Promise<void> {
         });
         return;
     }
+    // Vault configured (SecurityGate guarantees unlocked)
     const { apiKey, ...rest } = config;
-    if (!isVaultUnlocked()) {
-        await storage.set({
-            [STORAGE_KEYS.MCP_PROXY_CONFIG]: { ...DEFAULT_MCP_PROXY_CONFIG, ...rest, apiKey: "" },
-            [STORAGE_KEYS.SETTINGS_LAST_MODIFIED]: Date.now(),
-        });
-        return;
-    }
     const encrypted = await encryptWithVault({ apiKey });
     await storage.set({
         [STORAGE_KEYS.MCP_PROXY_CONFIG]: { ...DEFAULT_MCP_PROXY_CONFIG, ...rest, apiKey: "" },

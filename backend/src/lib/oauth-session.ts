@@ -3,7 +3,7 @@
  *
  * Reusable session + token logic for any OAuth provider:
  *   - AES-256-GCM at-rest encryption for refresh tokens
- *   - DB-backed session storage (user_id + provider → session_token + refresh_token)
+ *   - DB-backed session storage (key_id + provider → session_token + refresh_token)
  *   - In-memory access token cache with auto-expiry
  *
  * Used by google-auth.ts (and future trello-auth.ts, atlassian-auth.ts, etc.)
@@ -57,7 +57,7 @@ interface OAuthTokenRow extends RowDataPacket {
  * sharing the same session stay authenticated.
  */
 export async function storeRefreshToken(
-    userId: string,
+    keyId: string,
     provider: string,
     refreshToken: string
 ): Promise<string> {
@@ -65,23 +65,23 @@ export async function storeRefreshToken(
     const now = Date.now();
 
     const [existing] = await getPool().execute<OAuthTokenRow[]>(
-        `SELECT session_token, '' as refresh_token FROM oauth_tokens WHERE user_id = ? AND provider = ?`,
-        [userId, provider]
+        `SELECT session_token, '' as refresh_token FROM oauth_tokens WHERE key_id = ? AND provider = ?`,
+        [keyId, provider]
     );
 
     if (existing.length > 0) {
         await getPool().execute(
-            `UPDATE oauth_tokens SET refresh_token = ?, updated_at = ? WHERE user_id = ? AND provider = ?`,
-            [encryptedRefresh, now, userId, provider]
+            `UPDATE oauth_tokens SET refresh_token = ?, updated_at = ? WHERE key_id = ? AND provider = ?`,
+            [encryptedRefresh, now, keyId, provider]
         );
         return existing[0].session_token;
     }
 
     const sessionToken = randomUUID();
     await getPool().execute(
-        `INSERT INTO oauth_tokens (user_id, provider, session_token, refresh_token, created_at, updated_at)
+        `INSERT INTO oauth_tokens (key_id, provider, session_token, refresh_token, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, provider, sessionToken, encryptedRefresh, now, now]
+        [keyId, provider, sessionToken, encryptedRefresh, now, now]
     );
     return sessionToken;
 }
@@ -119,12 +119,12 @@ export async function isValidSession(
  * Check if a user has connected a specific provider.
  */
 export async function hasConnected(
-    userId: string,
+    keyId: string,
     provider: string
 ): Promise<boolean> {
     const [rows] = await getPool().execute<OAuthTokenRow[]>(
-        `SELECT 1 as session_token, '' as refresh_token FROM oauth_tokens WHERE user_id = ? AND provider = ?`,
-        [userId, provider]
+        `SELECT 1 as session_token, '' as refresh_token FROM oauth_tokens WHERE key_id = ? AND provider = ?`,
+        [keyId, provider]
     );
     return rows.length > 0;
 }
@@ -133,19 +133,19 @@ export async function hasConnected(
  * Delete tokens for a user+provider (disconnect).
  */
 export async function deleteTokensByUser(
-    userId: string,
+    keyId: string,
     provider: string
 ): Promise<void> {
     const [rows] = await getPool().execute<OAuthTokenRow[]>(
-        `SELECT session_token, '' as refresh_token FROM oauth_tokens WHERE user_id = ? AND provider = ?`,
-        [userId, provider]
+        `SELECT session_token, '' as refresh_token FROM oauth_tokens WHERE key_id = ? AND provider = ?`,
+        [keyId, provider]
     );
     for (const row of rows) {
         accessTokenCache.delete(row.session_token);
     }
     await getPool().execute(
-        `DELETE FROM oauth_tokens WHERE user_id = ? AND provider = ?`,
-        [userId, provider]
+        `DELETE FROM oauth_tokens WHERE key_id = ? AND provider = ?`,
+        [keyId, provider]
     );
 }
 

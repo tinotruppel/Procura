@@ -39,6 +39,7 @@ import {
     performSync,
 } from "@/lib/sync-service";
 import { isVaultUnlocked, restoreVaultFromSession } from "@/lib/vault";
+import { VaultSecrets } from "@/components/VaultSecrets";
 
 // =============================================================================
 // Types
@@ -137,7 +138,6 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
         apiKey: "",
     });
     const [baseUrlInput, setBaseUrlInput] = useState(config.baseUrl);
-    const [apiKeyInput, setApiKeyInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -161,7 +161,6 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
             const cloud = await getCloudConfig();
             setConfig(cloud);
             setBaseUrlInput(cloud.baseUrl);
-            setApiKeyInput(cloud.apiKey);
 
             if (cloud.enabled) {
                 setConfigExpanded(true);
@@ -196,8 +195,8 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
     }
 
     async function handleTestConnection() {
-        if (!baseUrlInput.trim() || !apiKeyInput.trim()) {
-            setError("Base URL and API Key are required");
+        if (!baseUrlInput.trim()) {
+            setError("Base URL is required");
             return;
         }
 
@@ -205,8 +204,11 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
         setError(null);
 
         try {
-            // 1. Run health check
-            const data = await fetchHealth(baseUrlInput.trim(), apiKeyInput.trim());
+            // 1. Run health check — use existing key or generate new one
+            const baseUrl = baseUrlInput.trim();
+            const apiKey = config.apiKey || crypto.randomUUID();
+
+            const data = await fetchHealth(baseUrl, apiKey);
             const services = data.services ?? [];
             const healthResult: ServiceHealth = {
                 sync: services.includes("sync"),
@@ -221,9 +223,7 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
                 return;
             }
 
-            // 2. All healthy — enable cloud
-            const baseUrl = baseUrlInput.trim();
-            const apiKey = apiKeyInput.trim();
+            // 2. All healthy — enable cloud with (possibly new) API key
 
             const newConfig: CloudConfig = {
                 enabled: true,
@@ -418,16 +418,6 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
                                 />
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-xs font-medium">API Key</label>
-                                <Input
-                                    type="password"
-                                    placeholder="Enter API key..."
-                                    value={apiKeyInput}
-                                    onChange={(e) => setApiKeyInput(e.target.value)}
-                                    className="h-8 text-xs font-mono"
-                                />
-                            </div>
 
                             {/* Apply button + inline status */}
                             <div className="flex items-center gap-2">
@@ -435,7 +425,7 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
                                     variant="outline"
                                     size="sm"
                                     onClick={handleTestConnection}
-                                    disabled={loading || !baseUrlInput.trim() || !apiKeyInput.trim()}
+                                    disabled={loading || !baseUrlInput.trim()}
                                 >
                                     {loading ? (
                                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -480,6 +470,11 @@ export function CloudSettings({ onSyncComplete, onMcpServersChanged }: CloudSett
                                 )}
                             </div>
                         </>
+                    )}
+
+                    {/* Vault Secrets (only when connected) */}
+                    {config.enabled && config.apiKey && (
+                        <VaultSecrets baseUrl={config.baseUrl} apiKey={config.apiKey} />
                     )}
 
                     {/* Error display */}

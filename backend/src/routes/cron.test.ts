@@ -4,13 +4,13 @@ import { cronRoutes } from "./cron";
 
 // Mock the DB functions
 vi.mock("../db/connection", () => ({
-    getInactiveUserIds: vi.fn(),
+    getInactiveKeyIds: vi.fn(),
     deleteUserData: vi.fn(),
 }));
 
-import { getInactiveUserIds, deleteUserData } from "../db/connection";
+import { getInactiveKeyIds, deleteUserData } from "../db/connection";
 
-const mockedGetInactive = vi.mocked(getInactiveUserIds);
+const mockedGetInactive = vi.mocked(getInactiveKeyIds);
 const mockedDeleteUser = vi.mocked(deleteUserData);
 
 const app = new Hono();
@@ -20,46 +20,46 @@ describe("Cron Cleanup Route", () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockedGetInactive.mockResolvedValue([]);
-        mockedDeleteUser.mockResolvedValue({ syncDeleted: 0, tokensDeleted: 0 });
+        mockedDeleteUser.mockResolvedValue({ syncDeleted: 0, tokensDeleted: 0, secretsDeleted: 0 });
     });
 
-    it("should return 0 users when none are inactive", async () => {
+    it("should return 0 keys when none are inactive", async () => {
         const res = await app.request("/cron/cleanup", { method: "POST" });
         expect(res.status).toBe(200);
 
-        const body = await res.json() as { success: boolean; usersCleanedUp: number };
+        const body = await res.json() as { success: boolean; keysCleanedUp: number };
         expect(body.success).toBe(true);
-        expect(body.usersCleanedUp).toBe(0);
+        expect(body.keysCleanedUp).toBe(0);
         expect(mockedGetInactive).toHaveBeenCalledOnce();
         expect(mockedDeleteUser).not.toHaveBeenCalled();
     });
 
-    it("should clean up inactive users and return details", async () => {
-        mockedGetInactive.mockResolvedValue(["user-a", "user-b"]);
+    it("should clean up inactive keys and return details", async () => {
+        mockedGetInactive.mockResolvedValue(["key-a", "key-b"]);
         mockedDeleteUser
-            .mockResolvedValueOnce({ syncDeleted: 3, tokensDeleted: 1 })
-            .mockResolvedValueOnce({ syncDeleted: 1, tokensDeleted: 0 });
+            .mockResolvedValueOnce({ syncDeleted: 3, tokensDeleted: 1, secretsDeleted: 2 })
+            .mockResolvedValueOnce({ syncDeleted: 1, tokensDeleted: 0, secretsDeleted: 0 });
 
         const res = await app.request("/cron/cleanup", { method: "POST" });
         expect(res.status).toBe(200);
 
         const body = await res.json() as {
             success: boolean;
-            usersCleanedUp: number;
+            keysCleanedUp: number;
             cutoffDays: number;
-            details: Array<{ userId: string; syncDeleted: number; tokensDeleted: number }>;
+            details: Array<{ keyId: string; syncDeleted: number; tokensDeleted: number; secretsDeleted: number }>;
         };
 
         expect(body.success).toBe(true);
-        expect(body.usersCleanedUp).toBe(2);
+        expect(body.keysCleanedUp).toBe(2);
         expect(body.cutoffDays).toBe(90);
         expect(body.details).toEqual([
-            { userId: "user-a", syncDeleted: 3, tokensDeleted: 1 },
-            { userId: "user-b", syncDeleted: 1, tokensDeleted: 0 },
+            { keyId: "key-a", syncDeleted: 3, tokensDeleted: 1, secretsDeleted: 2 },
+            { keyId: "key-b", syncDeleted: 1, tokensDeleted: 0, secretsDeleted: 0 },
         ]);
     });
 
-    it("should pass correct cutoff timestamp to getInactiveUserIds", async () => {
+    it("should pass correct cutoff timestamp to getInactiveKeyIds", async () => {
         const before = Date.now() - 90 * 24 * 60 * 60 * 1000;
 
         await app.request("/cron/cleanup", { method: "POST" });
@@ -89,7 +89,7 @@ describe("Cron Cleanup Route", () => {
     });
 
     it("should return 500 when deleteUserData fails", async () => {
-        mockedGetInactive.mockResolvedValue(["user-fail"]);
+        mockedGetInactive.mockResolvedValue(["key-fail"]);
         mockedDeleteUser.mockRejectedValueOnce(new Error("Delete failed"));
 
         const res = await app.request("/cron/cleanup", { method: "POST" });

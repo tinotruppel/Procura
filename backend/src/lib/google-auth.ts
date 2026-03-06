@@ -45,20 +45,20 @@ export function getGoogleClientSecret(): string {
 // Provider-bound wrappers
 // =============================================================================
 
-export function storeRefreshToken(userId: string, refreshToken: string): Promise<string> {
-    return storeToken(userId, PROVIDER, refreshToken);
+export function storeRefreshToken(keyId: string, refreshToken: string): Promise<string> {
+    return storeToken(keyId, PROVIDER, refreshToken);
 }
 
 export function isValidSession(sessionToken: string): Promise<boolean> {
     return checkSession(sessionToken, PROVIDER);
 }
 
-export function hasConnected(userId: string): Promise<boolean> {
-    return checkConnected(userId, PROVIDER);
+export function hasConnected(keyId: string): Promise<boolean> {
+    return checkConnected(keyId, PROVIDER);
 }
 
-export function deleteTokensByUser(userId: string): Promise<void> {
-    return deleteTokens(userId, PROVIDER);
+export function deleteTokensByUser(keyId: string): Promise<void> {
+    return deleteTokens(keyId, PROVIDER);
 }
 
 // =============================================================================

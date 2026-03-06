@@ -27,6 +27,8 @@ import { Hono } from "hono";
 import { createCorsMiddleware } from "./middleware/cors";
 import { authMiddleware } from "./middleware/auth";
 import { rateLimitMiddleware } from "./middleware/rate-limit";
+import { requestLoggerMiddleware } from "./middleware/request-logger";
+import { createLogger, getLogLevel } from "./lib/logger";
 import { syncRoutes } from "./routes/sync";
 import { cronRoutes } from "./routes/cron";
 import { mcpProxyRoutes } from "./routes/mcp-proxy";
@@ -45,6 +47,7 @@ import { googleCalendarMcpRoutes } from "./routes/google-calendar-mcp";
 import { googleOAuthRoutes } from "./routes/google-oauth";
 import { trelloOAuthRoutes } from "./routes/trello-oauth";
 import { mcpDirectoryRoutes } from "./routes/mcp-directory";
+import { vaultRoutes } from "./routes/vault";
 import { getConfig } from "./config";
 import { getPool } from "./db/connection";
 
@@ -53,6 +56,7 @@ const app = new Hono();
 
 // Global middleware
 app.use("*", createCorsMiddleware());
+app.use("*", requestLoggerMiddleware);
 app.use("*", rateLimitMiddleware);
 
 // Apply auth to protected routes BEFORE mounting them
@@ -67,6 +71,7 @@ app.use("/mcp/*", async (c, next) => {
     return authMiddleware(c, next);
 });
 app.use("/cron/*", authMiddleware);
+app.use("/vault/*", authMiddleware);
 app.use("/google/auth/google/status", authMiddleware);
 app.use("/google/auth/google/disconnect", authMiddleware);
 app.use("/trello/status", authMiddleware);
@@ -78,6 +83,7 @@ app.use("/trello/disconnect", authMiddleware);
 // Mount routes
 app.route("/sync", syncRoutes);
 app.route("/cron", cronRoutes);
+app.route("/vault", vaultRoutes);
 app.route("/mcp-proxy", mcpProxyRoutes);
 app.route("/mcp-directory", mcpDirectoryRoutes);
 // When adding new MCP routes, also update mcp-directory.ts
@@ -113,9 +119,11 @@ app.get("/health", async (c) => {
 // 404 handler
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
+const log = createLogger("app");
+
 // Error handler
 app.onError((err, c) => {
-    console.error("Unhandled error:", err);
+    log.error(`${c.req.method} ${c.req.path}`, err.message);
     return c.json({ error: "Internal server error" }, 500);
 });
 
@@ -142,7 +150,7 @@ if (!process.env.VITEST && process.env.NODE_ENV !== "test") {
         .then(() => import("@hono/node-server"))
         .then(({ serve }) => {
             serve({ fetch: app.fetch, port });
-            console.log(`🚀 Server running on port ${port} (Node.js)`);
+            console.log(`🚀 Server running on port ${port} (Node.js) — log level: ${getLogLevel()}`);
         })
         .catch((err) => {
             console.error("Failed to start server:", err);

@@ -25,5 +25,10 @@ export async function readEncryptedOrFallback<T>(
     if (!isVaultUnlocked()) return lockedFallback ?? fallback;
     const encrypted = await storage.getValue<string>(encryptedKey);
     if (!encrypted) return lockedFallback ?? fallback;
-    return decryptWithVault<T>(encrypted);
+    try {
+        return await decryptWithVault<T>(encrypted);
+    } catch (e) {
+        console.warn(`[vault] Failed to decrypt ${encryptedKey}, returning fallback:`, e);
+        return lockedFallback ?? fallback;
+    }
 }

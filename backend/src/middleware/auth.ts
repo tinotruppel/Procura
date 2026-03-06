@@ -1,5 +1,9 @@
 /**
  * API Key Authentication Middleware
+ *
+ * BYOK model: any non-empty API key is accepted. The key's SHA-256 hash
+ * (key_id) becomes the user identity. Static API_KEYS validation is
+ * kept as legacy fallback when the env var is set.
  */
 
 import { timingSafeEqual } from "crypto";
@@ -17,25 +21,26 @@ function timingSafeCompare(a: string, b: string): boolean {
 
 /**
  * Validates API key from X-API-Key header.
- * Returns the matched key if valid, or null if invalid.
- * Returns empty string if no API keys are configured (open mode).
+ *
+ * - If API_KEYS is configured: validates against that list (legacy mode).
+ * - If API_KEYS is empty: accepts any non-empty key (BYOK mode).
+ * - Returns the raw API key if valid, null if invalid.
  */
 export function validateApiKey(c: Context): string | null {
     const config = getConfig();
-
-    // If no API keys configured, allow all (open mode for development)
-    if (config.apiKeys.length === 0) {
-        return "";
-    }
-
-    // Get API key from X-API-Key header
     const providedKey = c.req.header("X-API-Key") || "";
-    if (providedKey) {
+
+    // Legacy mode: validate against static API_KEYS list
+    if (config.apiKeys.length > 0) {
+        if (!providedKey) return null;
         const matched = config.apiKeys.find(key => timingSafeCompare(key, providedKey));
         return matched ?? null;
     }
 
-    return null;
+    // BYOK / open mode: no static keys configured
+    // If a key is provided, pass it through (its SHA-256 hash = key_id)
+    // If no key is provided, allow access (open mode for development)
+    return providedKey;
 }
 
 /**

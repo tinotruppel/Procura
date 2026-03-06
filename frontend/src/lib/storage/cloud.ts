@@ -7,7 +7,6 @@
 
 import {
     isVaultConfigured,
-    isVaultUnlocked,
     encryptWithVault,
 } from "../vault";
 import { storage } from "./adapter";
@@ -58,42 +57,38 @@ export async function getCloudConfig(): Promise<CloudConfig> {
         STORAGE_KEYS.CLOUD_CONFIG,
         DEFAULT_CLOUD_CONFIG,
     );
+
+    // Try to read encrypted apiKey from vault (if configured)
     const configured = await isVaultConfigured();
-    if (!configured) {
-        return baseConfig;
+    if (configured) {
+        const secret = await readEncryptedOrFallback<Pick<CloudConfig, "apiKey">>(
+            STORAGE_KEYS.CLOUD_CONFIG_ENC,
+            { apiKey: "" },
+            { apiKey: "" },
+        );
+        if (secret.apiKey) {
+            return { ...baseConfig, apiKey: secret.apiKey };
+        }
     }
-    const lockedFallback = { ...baseConfig, apiKey: "" };
-    const secret = await readEncryptedOrFallback<Pick<CloudConfig, "apiKey">>(
-        STORAGE_KEYS.CLOUD_CONFIG_ENC,
-        { apiKey: "" },
-        { apiKey: "" },
-    );
-    if (!secret.apiKey) {
-        return lockedFallback;
-    }
-    return {
-        ...baseConfig,
-        ...secret,
-    };
+
+    // Fallback: apiKey stored directly in config (vault not configured or locked)
+    return baseConfig;
 }
 
 export async function setCloudConfig(config: CloudConfig): Promise<void> {
     const configured = await isVaultConfigured();
+    const { apiKey, ...rest } = config;
+
     if (!configured) {
+        // No vault: store full config including apiKey as plaintext
         await storage.set({
             [STORAGE_KEYS.CLOUD_CONFIG]: config,
             [STORAGE_KEYS.SETTINGS_LAST_MODIFIED]: Date.now(),
         });
         return;
     }
-    const { apiKey, ...rest } = config;
-    if (!isVaultUnlocked()) {
-        await storage.set({
-            [STORAGE_KEYS.CLOUD_CONFIG]: { ...DEFAULT_CLOUD_CONFIG, ...rest, apiKey: "" },
-            [STORAGE_KEYS.SETTINGS_LAST_MODIFIED]: Date.now(),
-        });
-        return;
-    }
+
+    // Vault configured (SecurityGate guarantees it's unlocked here)
     const encrypted = await encryptWithVault({ apiKey });
     await storage.set({
         [STORAGE_KEYS.CLOUD_CONFIG]: { ...DEFAULT_CLOUD_CONFIG, ...rest, apiKey: "" },
