@@ -27,8 +27,7 @@
         "sidePanel",
         "activeTab",
         "tabs",
-        "scripting",
-        "identity"
+        "scripting"
     ],
     "host_permissions": [
         "<all_urls>"
