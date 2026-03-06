@@ -1,6 +1,6 @@
 {
     "name": "procura-backend",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "type": "module",
     "scripts": {
         "dev": "rm -rf .devdb && DOTENV_CONFIG_PATH=.env.local tsx watch src/index.ts",
