@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import {
     getAccessTokenForSession,
     createAuthHeaders,
-    isGoogleConfigured,
+    isGoogleConfiguredAsync,
     isValidSession,
     buildGoogleWwwAuthenticate,
     buildGoogleResourceMetadata,
@@ -20,13 +20,18 @@ import {
 // Session context (per-request)
 // =============================================================================
 
-const sessionStore = new AsyncLocalStorage<string>();
+interface SessionContext {
+    session: string;
+    apiKey: string;
+}
+
+const sessionStore = new AsyncLocalStorage<SessionContext>();
 
 /** Get a valid Google access token for the current request's session */
 async function getToken(): Promise<string> {
-    const session = sessionStore.getStore();
-    if (!session) throw new Error("No Google session. Please connect your Google account.");
-    return getAccessTokenForSession(session);
+    const ctx = sessionStore.getStore();
+    if (!ctx) throw new Error("No Google session. Please connect your Google account.");
+    return getAccessTokenForSession(ctx.session, ctx.apiKey);
 }
 
 // =============================================================================
@@ -126,10 +131,8 @@ function findTableCells(content: unknown[], tablePosition: number): number[][] {
 // =============================================================================
 
 const mcpServer = new McpServer({ name: "google-docs", version: "1.0.0" });
-const configured = isGoogleConfigured();
 
-if (configured) {
-    mcpServer.registerTool("list_documents", {
+mcpServer.registerTool("list_documents", {
         description: "List user's Google Docs documents",
         inputSchema: {
             query: z.string().optional().describe("Search query to filter documents"),
@@ -245,7 +248,6 @@ if (configured) {
         if (!response.ok) throw new Error(`Failed to rename: ${response.status}`);
         return { content: [{ type: "text" as const, text: JSON.stringify({ documentId, title, message: `Renamed to "${title}"` }, null, 2) }] };
     });
-}
 
 // =============================================================================
 // HTTP Routes
@@ -255,20 +257,21 @@ export const googleDocsMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 googleDocsMcpRoutes.all("/", async (c) => {
-    if (!configured) return c.json({ error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." }, 503);
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
 
-    // Extract session token from Authorization header
+    if (!configured) return c.json({ error: "Google OAuth not configured. Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables." }, 503);
+
     const authHeader = c.req.header("Authorization") || "";
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
-    // Require valid session token — return 401 so frontend shows Login button
     if (!sessionToken || !(await isValidSession(sessionToken))) {
         c.header("WWW-Authenticate", buildGoogleWwwAuthenticate(c, "/mcp/google-docs"));
         return c.json({ error: "Google authentication required" }, 401);
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
-    return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+    return sessionStore.run({ session: sessionToken, apiKey: apiKey! }, () => transport.handleRequest(c));
 });
 
 googleDocsMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
@@ -276,9 +279,12 @@ googleDocsMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
 });
 
 googleDocsMcpRoutes.get("/info", async (c) => {
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
     return c.json({
         name: "google-docs", version: "1.0.0",
         status: configured ? "ready" : "not_configured", configured,
-        tools: configured ? ["list_documents", "get_document", "create_document", "append_text", "replace_text", "rename_document"] : [],
+        tools: ["list_documents", "get_document", "create_document", "append_text", "replace_text", "rename_document"],
+        note: configured ? undefined : "Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables",
     });
 });

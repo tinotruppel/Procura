@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
+import { resolveSecret } from "../lib/vault-resolver";
 
 // =============================================================================
 // Types
@@ -160,40 +161,42 @@ async function getCv(
 // MCP Server Setup
 // =============================================================================
 
-function getDefaultAuth(): FlowcaseAuth | null {
-    const subdomain = process.env.FLOWCASE_SUBDOMAIN;
-    const apiKey = process.env.FLOWCASE_API_KEY;
+// Request-scoped API key (set per-request in the route handler)
+let currentRequestApiKey: string | undefined;
 
-    if (!subdomain || !apiKey) {
-        return null;
-    }
-
+async function resolveAuth(): Promise<FlowcaseAuth | null> {
+    const subdomain = await resolveSecret("FLOWCASE_SUBDOMAIN", currentRequestApiKey);
+    const apiKey = await resolveSecret("FLOWCASE_API_KEY", currentRequestApiKey);
+    if (!subdomain || !apiKey) return null;
     return { subdomain, apiKey };
 }
 
-// Create MCP server instance
 const mcpServer = new McpServer({
     name: "cv-database",
     version: "1.0.0",
 });
 
-const auth = getDefaultAuth();
-
-if (auth) {
-    // --- search_by_name ---
-    mcpServer.registerTool(
-        "search_by_name",
-        {
-            description: "Search for people by name in the CV database",
-            inputSchema: {
-                query: z.string().describe("Name to search for (e.g. 'John Doe')"),
-                offset: z.number().optional().describe("Pagination offset (default: 0)"),
-                size: z.number().optional().describe("Number of results (default: 30, max: 500)"),
-            },
+// --- search_by_name ---
+mcpServer.registerTool(
+    "search_by_name",
+    {
+        description: "Search for people by name in the CV database",
+        inputSchema: {
+            query: z.string().describe("Name to search for (e.g. 'John Doe')"),
+            offset: z.number().optional().describe("Pagination offset (default: 0)"),
+            size: z.number().optional().describe("Number of results (default: 30, max: 500)"),
         },
-        async ({ query, offset = 0, size = 30 }) => {
-            const limitedSize = Math.min(size, 500);
-            const results = await searchByName(auth.subdomain, auth.apiKey, query, offset, limitedSize);
+    },
+    async ({ query, offset = 0, size = 30 }) => {
+        const auth = await resolveAuth();
+        if (!auth) {
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY not configured. Store them via vault or set as environment variables." }, null, 2) }],
+                isError: true
+            };
+        }
+        const limitedSize = Math.min(size, 500);
+        const results = await searchByName(auth.subdomain, auth.apiKey, query, offset, limitedSize);
 
             return {
                 content: [{
@@ -213,67 +216,80 @@ if (auth) {
         }
     );
 
-    // --- search_content ---
-    mcpServer.registerTool(
-        "search_content",
-        {
-            description: "Search CV content for skills, technologies, or experience keywords",
-            inputSchema: {
-                query: z.string().describe("Skills, technologies, or keywords to search for"),
-                offset: z.number().optional().describe("Pagination offset (default: 0)"),
-                size: z.number().optional().describe("Number of results (default: 30, max: 500)"),
-            },
+// --- search_content ---
+mcpServer.registerTool(
+    "search_content",
+    {
+        description: "Search CV content for skills, technologies, or experience keywords",
+        inputSchema: {
+            query: z.string().describe("Skills, technologies, or keywords to search for"),
+            offset: z.number().optional().describe("Pagination offset (default: 0)"),
+            size: z.number().optional().describe("Number of results (default: 30, max: 500)"),
         },
-        async ({ query, offset = 0, size = 30 }) => {
-            const limitedSize = Math.min(size, 500);
-            const results = await searchContent(auth.subdomain, auth.apiKey, query, offset, limitedSize);
-
+    },
+    async ({ query, offset = 0, size = 30 }) => {
+        const auth = await resolveAuth();
+        if (!auth) {
             return {
-                content: [{
-                    type: "text" as const,
-                    text: JSON.stringify({
-                        results: stripImages(results.cvs || []),
-                        total: results.total || results.cvs?.length || 0,
-                        offset,
-                        size: limitedSize,
-                        query,
-                        searchType: "content",
-                        message: `Found ${results.total || results.cvs?.length || 0} CV(s) with content matching "${query}"`,
-                        hint: "Use user_id and cv_id from results to call get_cv"
-                    }, null, 2)
-                }]
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY not configured." }, null, 2) }],
+                isError: true
             };
         }
-    );
+        const limitedSize = Math.min(size, 500);
+        const results = await searchContent(auth.subdomain, auth.apiKey, query, offset, limitedSize);
 
-    // --- get_cv ---
-    mcpServer.registerTool(
-        "get_cv",
-        {
-            description: "Get full CV details for a person",
-            inputSchema: {
-                user_id: z.string().describe("User ID from search results"),
-                cv_id: z.string().describe("CV ID from search results"),
-            },
+        return {
+            content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                    results: stripImages(results.cvs || []),
+                    total: results.total || results.cvs?.length || 0,
+                    offset,
+                    size: limitedSize,
+                    query,
+                    searchType: "content",
+                    message: `Found ${results.total || results.cvs?.length || 0} CV(s) with content matching "${query}"`,
+                    hint: "Use user_id and cv_id from results to call get_cv"
+                }, null, 2)
+            }]
+        };
+    }
+);
+
+// --- get_cv ---
+mcpServer.registerTool(
+    "get_cv",
+    {
+        description: "Get full CV details for a person",
+        inputSchema: {
+            user_id: z.string().describe("User ID from search results"),
+            cv_id: z.string().describe("CV ID from search results"),
         },
-        async ({ user_id, cv_id }) => {
-            const cv = await getCv(auth.subdomain, auth.apiKey, user_id, cv_id);
-
+    },
+    async ({ user_id, cv_id }) => {
+        const auth = await resolveAuth();
+        if (!auth) {
             return {
-                content: [{
-                    type: "text" as const,
-                    text: JSON.stringify({
-                        cv: stripImages(cv),
-                        userId: user_id,
-                        cvId: cv_id,
-                        name: (cv.name as string) || (cv.user as { name?: string })?.name,
-                        message: `Retrieved CV for ${(cv.name as string) || (cv.user as { name?: string })?.name || user_id}`
-                    }, null, 2)
-                }]
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY not configured." }, null, 2) }],
+                isError: true
             };
         }
-    );
-}
+        const cv = await getCv(auth.subdomain, auth.apiKey, user_id, cv_id);
+
+        return {
+            content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                    cv: stripImages(cv),
+                    userId: user_id,
+                    cvId: cv_id,
+                    name: (cv.name as string) || (cv.user as { name?: string })?.name,
+                    message: `Retrieved CV for ${(cv.name as string) || (cv.user as { name?: string })?.name || user_id}`
+                }, null, 2)
+            }]
+        };
+    }
+);
 
 // =============================================================================
 // HTTP Routes with Hono MCP Transport
@@ -287,30 +303,29 @@ const transport = new StreamableHTTPTransport();
  * MCP endpoint - handles all MCP communication
  */
 cvDatabaseMcpRoutes.all("/", async (c) => {
-    if (!auth) {
-        return c.json({
-            error: "CV Database MCP server not configured. Set FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY environment variables."
-        }, 503);
-    }
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
 
-    if (!mcpServer.isConnected()) {
-        await mcpServer.connect(transport);
+    try {
+        if (!mcpServer.isConnected()) {
+            await mcpServer.connect(transport);
+        }
+        return transport.handleRequest(c);
+    } catch (e) {
+        console.error("[cv-database-mcp] Error handling request:", e);
+        return c.json({ error: "Internal server error" }, 500);
     }
-
-    return transport.handleRequest(c);
 });
 
-/**
- * Health/info endpoint
- */
 cvDatabaseMcpRoutes.get("/info", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const auth = await resolveAuth();
     return c.json({
         name: "cv-database",
         version: "1.0.0",
         description: "CV/resume search and retrieval",
         status: auth ? "ready" : "not_configured",
         configured: !!auth,
-        tools: auth ? ["search_by_name", "search_content", "get_cv"] : [],
-        note: auth ? undefined : "Set FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY environment variables"
+        tools: ["search_by_name", "search_content", "get_cv"],
+        note: auth ? undefined : "Store FLOWCASE_SUBDOMAIN and FLOWCASE_API_KEY in vault or set as environment variables"
     });
 });

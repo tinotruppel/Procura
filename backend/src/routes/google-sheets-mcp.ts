@@ -14,7 +14,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import {
     getAccessTokenForSession,
     createAuthHeaders,
-    isGoogleConfigured,
+    isGoogleConfiguredAsync,
     isValidSession,
     buildGoogleWwwAuthenticate,
     buildGoogleResourceMetadata,
@@ -24,12 +24,17 @@ import {
 // Session context
 // =============================================================================
 
-const sessionStore = new AsyncLocalStorage<string>();
+interface SessionContext {
+    session: string;
+    apiKey: string;
+}
+
+const sessionStore = new AsyncLocalStorage<SessionContext>();
 
 async function getToken(): Promise<string> {
-    const session = sessionStore.getStore();
-    if (!session) throw new Error("No Google session. Please connect your Google account.");
-    return getAccessTokenForSession(session);
+    const ctx = sessionStore.getStore();
+    if (!ctx) throw new Error("No Google session. Please connect your Google account.");
+    return getAccessTokenForSession(ctx.session, ctx.apiKey);
 }
 
 // =============================================================================
@@ -66,9 +71,7 @@ async function determineFillValues(spreadsheetId: string, range: string, fillVal
 // =============================================================================
 
 const mcpServer = new McpServer({ name: "google-sheets", version: "1.0.0" });
-const configured = isGoogleConfigured();
 
-if (configured) {
     mcpServer.registerTool("list_spreadsheets", {
         description: "List user's Google Sheets spreadsheets",
         inputSchema: {},
@@ -159,7 +162,7 @@ if (configured) {
         const result = (await response.json()) as { updates?: { updatedRange?: string; updatedRows?: number; updatedColumns?: number; updatedCells?: number } };
         return { content: [{ type: "text" as const, text: JSON.stringify({ updatedRange: result.updates?.updatedRange, updatedRows: result.updates?.updatedRows, updatedColumns: result.updates?.updatedColumns, updatedCells: result.updates?.updatedCells }, null, 2) }] };
     });
-}
+
 
 // =============================================================================
 // HTTP Routes
@@ -169,7 +172,10 @@ export const googleSheetsMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 googleSheetsMcpRoutes.all("/", async (c) => {
-    if (!configured) return c.json({ error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." }, 503);
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
+
+    if (!configured) return c.json({ error: "Google OAuth not configured. Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables." }, 503);
 
     const authHeader = c.req.header("Authorization") || "";
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -180,7 +186,7 @@ googleSheetsMcpRoutes.all("/", async (c) => {
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
-    return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+    return sessionStore.run({ session: sessionToken, apiKey: apiKey! }, () => transport.handleRequest(c));
 });
 
 googleSheetsMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
@@ -188,9 +194,12 @@ googleSheetsMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
 });
 
 googleSheetsMcpRoutes.get("/info", async (c) => {
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
     return c.json({
         name: "google-sheets", version: "1.0.0",
         status: configured ? "ready" : "not_configured", configured,
-        tools: configured ? ["list_spreadsheets", "get_spreadsheet", "create_spreadsheet", "read_values", "write_values", "append_rows"] : [],
+        tools: ["list_spreadsheets", "get_spreadsheet", "create_spreadsheet", "read_values", "write_values", "append_rows"],
+        note: configured ? undefined : "Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables",
     });
 });

@@ -222,7 +222,8 @@ async function startOAuthFlow(
     serverUrl: string,
     metadataUrl: string,
     scope?: string,
-    useDirectAuthServer?: boolean
+    useDirectAuthServer?: boolean,
+    apiKey?: string
 ): Promise<string> {
     console.log("[OAuth] Starting flow", { serverUrl, metadataUrl, useDirectAuthServer });
 
@@ -307,7 +308,7 @@ async function startOAuthFlow(
         params.set("scope", scopes);
     }
 
-    const authUrl = `${authMetadata.authorization_endpoint}?${params.toString()}`;
+    const authUrl = `${authMetadata.authorization_endpoint}?${params.toString()}${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ""}`;
     console.log("[OAuth] Auth URL:", authUrl);
     return authUrl;
 }
@@ -365,10 +366,11 @@ export async function launchOAuthPopup(
     serverUrl: string,
     metadataUrl: string,
     scope?: string,
-    useDirectAuthServer?: boolean
+    useDirectAuthServer?: boolean,
+    apiKey?: string
 ): Promise<string> {
     console.log("[OAuth] launchOAuthPopup called");
-    const authUrl = await startOAuthFlow(serverUrl, metadataUrl, scope, useDirectAuthServer);
+    const authUrl = await startOAuthFlow(serverUrl, metadataUrl, scope, useDirectAuthServer, apiKey);
     console.log("[OAuth] Auth URL:", authUrl);
 
     return new Promise((resolve, reject) => {

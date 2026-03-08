@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
+import { resolveSecret } from "../lib/vault-resolver";
 
 const GITHUB_API_BASE = "https://api.github.com";
 
@@ -96,10 +97,12 @@ interface GitHubWorkflowRun {
 interface GitHubAuthenticatedUser {
     login: string;
 }
-function getDefaultAuth(): GitHubAuth {
-    return {
-        token: process.env.GITHUB_TOKEN || undefined,
-    };
+// Request-scoped API key (set per-request in the route handler)
+let currentRequestApiKey: string | undefined;
+
+async function resolveAuth(): Promise<GitHubAuth> {
+    const token = await resolveSecret("GITHUB_TOKEN", currentRequestApiKey);
+    return { token };
 }
 
 async function githubRequest<T>(path: string, auth: GitHubAuth, options?: RequestInit): Promise<T> {
@@ -130,7 +133,8 @@ const mcpServer = new McpServer({
     version: "1.0.0",
 });
 
-const auth = getDefaultAuth();
+// auth is resolved per-request; module-level default for tool registration
+let auth: GitHubAuth = { token: process.env.GITHUB_TOKEN || undefined };
 
 // --- list_projects (repositories) ---
 mcpServer.registerTool(
@@ -769,20 +773,30 @@ export const githubMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 githubMcpRoutes.all("/", async (c) => {
-    if (!mcpServer.isConnected()) {
-        await mcpServer.connect(transport);
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    auth = await resolveAuth();
+
+    try {
+        if (!mcpServer.isConnected()) {
+            await mcpServer.connect(transport);
+        }
+        return transport.handleRequest(c);
+    } catch (e) {
+        console.error("[github-mcp] Error handling request:", e);
+        return c.json({ error: "Internal server error" }, 500);
     }
-    return transport.handleRequest(c);
 });
 
 githubMcpRoutes.get("/info", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const resolvedAuth = await resolveAuth();
     return c.json({
         name: "github",
         version: "1.0.0",
         description: "GitHub access (read with limited write actions)",
         status: "ready",
         configured: true,
-        tokenConfigured: !!auth.token,
+        tokenConfigured: !!resolvedAuth.token,
         tools: [
             "list_projects", "get_project",
             "list_issues", "get_issue",
@@ -792,6 +806,6 @@ githubMcpRoutes.get("/info", async (c) => {
             "list_workflows", "get_workflow", "list_workflow_runs",
             "trigger_workflow", "cancel_workflow_run",
         ],
-        note: auth.token ? undefined : "Set GITHUB_TOKEN for higher rate limits or private repositories",
+        note: resolvedAuth.token ? undefined : "Store GITHUB_TOKEN in vault or set as environment variable for private repos",
     });
 });

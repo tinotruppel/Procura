@@ -18,6 +18,7 @@ import {
     getCachedAccessToken,
     cacheAccessToken,
 } from "./oauth-session";
+import { resolveSecret } from "./vault-resolver";
 
 // Re-export generic functions bound to "google" provider
 export { createAuthHeaders, clearTokenCache } from "./oauth-session";
@@ -29,24 +30,26 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 // Configuration
 // =============================================================================
 
-export function isGoogleConfigured(): boolean {
-    return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+export async function isGoogleConfiguredAsync(apiKey: string | undefined): Promise<boolean> {
+    const clientId = await resolveSecret("GOOGLE_CLIENT_ID", apiKey);
+    const clientSecret = await resolveSecret("GOOGLE_CLIENT_SECRET", apiKey);
+    return !!(clientId && clientSecret);
 }
 
-export function getGoogleClientId(): string {
-    return process.env.GOOGLE_CLIENT_ID || "";
+export async function getGoogleClientIdAsync(apiKey: string | undefined): Promise<string> {
+    return (await resolveSecret("GOOGLE_CLIENT_ID", apiKey)) || "";
 }
 
-export function getGoogleClientSecret(): string {
-    return process.env.GOOGLE_CLIENT_SECRET || "";
+export async function getGoogleClientSecretAsync(apiKey: string | undefined): Promise<string> {
+    return (await resolveSecret("GOOGLE_CLIENT_SECRET", apiKey)) || "";
 }
 
 // =============================================================================
 // Provider-bound wrappers
 // =============================================================================
 
-export function storeRefreshToken(keyId: string, refreshToken: string): Promise<string> {
-    return storeToken(keyId, PROVIDER, refreshToken);
+export function storeRefreshToken(keyId: string, refreshToken: string, apiKey: string): Promise<string> {
+    return storeToken(keyId, PROVIDER, refreshToken, apiKey);
 }
 
 export function isValidSession(sessionToken: string): Promise<boolean> {
@@ -65,9 +68,9 @@ export function deleteTokensByUser(keyId: string): Promise<void> {
 // Google Access Token (refresh via Google's token endpoint)
 // =============================================================================
 
-export async function getAccessTokenForSession(sessionToken: string): Promise<string> {
-    const clientId = getGoogleClientId();
-    const clientSecret = getGoogleClientSecret();
+export async function getAccessTokenForSession(sessionToken: string, apiKey: string): Promise<string> {
+    const clientId = await getGoogleClientIdAsync(apiKey);
+    const clientSecret = await getGoogleClientSecretAsync(apiKey);
 
     if (!clientId || !clientSecret) {
         throw new Error("Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
@@ -77,7 +80,7 @@ export async function getAccessTokenForSession(sessionToken: string): Promise<st
     const cached = getCachedAccessToken(sessionToken);
     if (cached) return cached;
 
-    const refreshToken = await getRefreshTokenBySession(sessionToken, PROVIDER);
+    const refreshToken = await getRefreshTokenBySession(sessionToken, PROVIDER, apiKey);
     if (!refreshToken) {
         throw new Error("Invalid or expired session. Please reconnect your Google account.");
     }
@@ -108,6 +111,7 @@ export async function getAccessTokenForSession(sessionToken: string): Promise<st
     cacheAccessToken(sessionToken, data.access_token, data.expires_in);
     return data.access_token;
 }
+
 
 // =============================================================================
 // RFC9728 OAuth Discovery Helpers (shared by all Google MCP servers)

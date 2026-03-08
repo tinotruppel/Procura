@@ -23,12 +23,15 @@
 import { Hono } from "hono";
 import { randomBytes, createHash, randomUUID } from "crypto";
 import {
-    isTrelloConfigured,
-    getTrelloAppKey,
+    isTrelloConfiguredAsync,
+    getTrelloAppKeyAsync,
     storeUserToken,
     hasConnected,
     deleteTokensByUser,
 } from "../lib/trello-auth";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("trello-oauth");
 
 // =============================================================================
 // In-memory stores (transient, short-lived)
@@ -48,6 +51,7 @@ interface PendingAuth {
     codeChallenge: string;
     codeChallengeMethod: string;
     scope: string;
+    vaultApiKey: string | undefined;
     createdAt: number;
 }
 
@@ -167,8 +171,12 @@ trelloOAuthRoutes.post("/oauth/register", async (c) => {
  * GET /oauth/authorize
  * Authorization endpoint — validates PKCE, stores pending auth, redirects to Trello
  */
-trelloOAuthRoutes.get("/oauth/authorize", (c) => {
-    if (!isTrelloConfigured()) return c.json({ error: "Trello not configured" }, 503);
+trelloOAuthRoutes.get("/oauth/authorize", async (c) => {
+    const apiKey = c.req.query("api_key") || c.req.header("X-API-Key") || undefined;
+    log.info(`authorize: api_key present=${!!apiKey}, api_key length=${apiKey?.length || 0}`);
+    const configured = await isTrelloConfiguredAsync(apiKey);
+    log.info(`authorize: configured=${configured}`);
+    if (!configured) return c.json({ error: "Trello not configured. Store TRELLO_APP_KEY in vault or set as environment variable." }, 503);
 
     const clientId = c.req.query("client_id");
     const redirectUri = c.req.query("redirect_uri");
@@ -212,13 +220,14 @@ trelloOAuthRoutes.get("/oauth/authorize", (c) => {
         codeChallenge,
         codeChallengeMethod,
         scope,
+        vaultApiKey: apiKey,
         createdAt: Date.now(),
     });
 
     // Redirect to Trello authorization
     const base = getBaseUrl(c);
     const trelloParams = new URLSearchParams({
-        key: getTrelloAppKey(),
+        key: await getTrelloAppKeyAsync(apiKey),
         callback_method: "fragment",
         return_url: `${base}/trello/callback?state=${encodeURIComponent(internalState)}`,
         scope: "read,write",
@@ -300,15 +309,22 @@ trelloOAuthRoutes.post("/token-store", async (c) => {
     }
 
     try {
-        // Get Trello user identity to use as userId
-        const memberRes = await fetch(`https://api.trello.com/1/members/me?key=${getTrelloAppKey()}&token=${body.token}&fields=username,email`);
+        log.info(`token-store: resolving appKey (vaultApiKey present=${!!pending.vaultApiKey})`);
+        const appKey = await getTrelloAppKeyAsync(pending.vaultApiKey);
+        log.info(`token-store: appKey resolved (length=${appKey.length}), fetching member info...`);
+
+        const memberRes = await fetch(`https://api.trello.com/1/members/me?key=${appKey}&token=${body.token}&fields=username,email`);
+        log.info(`token-store: member API status=${memberRes.status}`);
+
         const memberInfo = memberRes.ok
             ? (await memberRes.json()) as { username?: string; email?: string; id?: string }
             : { id: randomUUID() };
         const userId = memberInfo.email || memberInfo.username || memberInfo.id || randomUUID();
+        log.info(`token-store: userId=${userId}`);
 
         // Store the Trello token (encrypted) and get session token
-        const sessionToken = await storeUserToken(userId, body.token);
+        const sessionToken = await storeUserToken(userId, body.token, pending.vaultApiKey!);
+        log.info(`token-store: sessionToken stored (length=${sessionToken.length})`);
 
         // Generate auth code for PKCE exchange
         const authCode = generateSecureCode();
@@ -321,9 +337,10 @@ trelloOAuthRoutes.post("/token-store", async (c) => {
             createdAt: Date.now(),
         });
 
+        log.info(`token-store: success, returning authCode`);
         return c.json({ code: authCode, clientState: pending.clientState });
     } catch (err) {
-        console.error("Trello token-store error:", err);
+        log.error(`token-store: FAILED`, err instanceof Error ? err.stack || err.message : String(err));
         return c.json({ error: "Failed to store token" }, 500);
     }
 });
@@ -386,8 +403,9 @@ trelloOAuthRoutes.post("/oauth/token", async (c) => {
 trelloOAuthRoutes.get("/status", async (c) => {
     const userId = c.req.query("userId");
     if (!userId) return c.json({ error: "userId query parameter is required" }, 400);
+    const apiKey = c.req.header("X-API-Key") || undefined;
     const connected = await hasConnected(userId);
-    return c.json({ configured: isTrelloConfigured(), connected });
+    return c.json({ configured: await isTrelloConfiguredAsync(apiKey), connected });
 });
 
 /**

@@ -2,43 +2,48 @@
  * Generic OAuth Session Manager (provider-agnostic)
  *
  * Reusable session + token logic for any OAuth provider:
- *   - AES-256-GCM at-rest encryption for refresh tokens
+ *   - BYOK encryption using the user's API key (via vault-crypto)
  *   - DB-backed session storage (key_id + provider → session_token + refresh_token)
  *   - In-memory access token cache with auto-expiry
  *
- * Used by google-auth.ts (and future trello-auth.ts, atlassian-auth.ts, etc.)
+ * Used by google-auth.ts, trello-auth.ts (and future providers)
  */
 
-import { randomBytes, createCipheriv, createDecipheriv, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { getPool } from "../db/connection";
 import type { RowDataPacket } from "mysql2/promise";
+import { encryptSecret, decryptSecret, type EncryptedPayload } from "./vault-crypto";
 
 // =============================================================================
-// At-rest encryption (AES-256-GCM)
+// At-rest encryption (BYOK via vault-crypto)
 // =============================================================================
 
-function getEncryptionKey(): Buffer {
-    const key = process.env.TOKEN_ENCRYPTION_KEY;
-    if (!key) throw new Error("TOKEN_ENCRYPTION_KEY not set. Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"");
-    return Buffer.from(key, "hex");
+/**
+ * Encrypt a token using the user's API key (BYOK pattern).
+ * Returns a compact JSON string stored in the DB column.
+ */
+export function encryptToken(apiKey: string, plaintext: string): string {
+    const payload = encryptSecret(apiKey, plaintext);
+    return JSON.stringify({
+        s: payload.salt.toString("hex"),
+        i: payload.iv.toString("hex"),
+        t: payload.tag.toString("hex"),
+        c: payload.ciphertext.toString("hex"),
+    });
 }
 
-export function encryptToken(plaintext: string): string {
-    const key = getEncryptionKey();
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, iv);
-    const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
-}
-
-export function decryptToken(encoded: string): string {
-    const key = getEncryptionKey();
-    const [ivHex, tagHex, cipherHex] = encoded.split(":");
-    if (!ivHex || !tagHex || !cipherHex) throw new Error("Invalid encrypted token format");
-    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
-    decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-    return decipher.update(cipherHex, "hex", "utf8") + decipher.final("utf8");
+/**
+ * Decrypt a token using the user's API key (BYOK pattern).
+ */
+export function decryptToken(apiKey: string, encoded: string): string {
+    const parsed = JSON.parse(encoded) as { s: string; i: string; t: string; c: string };
+    const payload: EncryptedPayload = {
+        salt: Buffer.from(parsed.s, "hex"),
+        iv: Buffer.from(parsed.i, "hex"),
+        tag: Buffer.from(parsed.t, "hex"),
+        ciphertext: Buffer.from(parsed.c, "hex"),
+    };
+    return decryptSecret(apiKey, payload);
 }
 
 // =============================================================================
@@ -59,9 +64,10 @@ interface OAuthTokenRow extends RowDataPacket {
 export async function storeRefreshToken(
     keyId: string,
     provider: string,
-    refreshToken: string
+    refreshToken: string,
+    apiKey: string,
 ): Promise<string> {
-    const encryptedRefresh = encryptToken(refreshToken);
+    const encryptedRefresh = encryptToken(apiKey, refreshToken);
     const now = Date.now();
 
     const [existing] = await getPool().execute<OAuthTokenRow[]>(
@@ -91,15 +97,17 @@ export async function storeRefreshToken(
  */
 export async function getRefreshTokenBySession(
     sessionToken: string,
-    provider: string
+    provider: string,
+    apiKey: string,
 ): Promise<string | null> {
     const [rows] = await getPool().execute<OAuthTokenRow[]>(
         `SELECT refresh_token FROM oauth_tokens WHERE session_token = ? AND provider = ?`,
         [sessionToken, provider]
     );
     if (!rows[0]) return null;
-    return decryptToken(rows[0].refresh_token);
+    return decryptToken(apiKey, rows[0].refresh_token);
 }
+
 
 /**
  * Check if a session token exists and is valid for the given provider.

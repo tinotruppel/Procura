@@ -508,5 +508,27 @@ describe("MCP Client", () => {
             expect(notifBody.method).toBe("notifications/initialized");
             expect(notifBody).not.toHaveProperty("id");
         });
+
+        it("extracts error message from JSON body on non-OK response", async () => {
+            mockFetch.mockResolvedValueOnce(new Response(
+                JSON.stringify({
+                    error: "Image Generation MCP server not configured. Set GEMINI_API_KEY environment variable.",
+                }),
+                { status: 503, statusText: "Service Unavailable" }
+            ));
+
+            await expect(connectToServer("https://mcp.example.com/sse"))
+                .rejects.toThrow("Image Generation MCP server not configured. Set GEMINI_API_KEY environment variable.");
+        });
+
+        it("falls back to HTTP status code when response has no JSON body", async () => {
+            mockFetch.mockResolvedValueOnce(new Response(null, {
+                status: 502,
+                statusText: "Bad Gateway",
+            }));
+
+            await expect(connectToServer("https://mcp.example.com/sse"))
+                .rejects.toThrow("HTTP 502");
+        });
     });
 });

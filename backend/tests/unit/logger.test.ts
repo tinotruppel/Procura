@@ -24,10 +24,8 @@ describe("logger", () => {
 
     it("should respect log level: error only", () => {
         setLogLevel("error");
-        const spy = vi.spyOn(console, "error").mockImplementation(() => { });
-        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
-        const infoSpy = vi.spyOn(console, "info").mockImplementation(() => { });
-        const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => { });
+        const errSpy = vi.spyOn(console, "error").mockImplementation(() => { });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
 
         const log = createLogger("test");
         log.error("err");
@@ -35,23 +33,18 @@ describe("logger", () => {
         log.info("inf");
         log.debug("dbg");
 
-        expect(spy).toHaveBeenCalledOnce();
-        expect(warnSpy).not.toHaveBeenCalled();
-        expect(infoSpy).not.toHaveBeenCalled();
-        expect(debugSpy).not.toHaveBeenCalled();
+        // error level: only error is logged (via console.error)
+        expect(errSpy).toHaveBeenCalledOnce();
+        expect(logSpy).not.toHaveBeenCalled();
 
-        spy.mockRestore();
-        warnSpy.mockRestore();
-        infoSpy.mockRestore();
-        debugSpy.mockRestore();
+        errSpy.mockRestore();
+        logSpy.mockRestore();
     });
 
     it("should respect log level: info shows error+warn+info", () => {
         setLogLevel("info");
         const errSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
-        const infoSpy = vi.spyOn(console, "info").mockImplementation(() => { });
-        const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => { });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
 
         const log = createLogger("test");
         log.error("err");
@@ -59,23 +52,19 @@ describe("logger", () => {
         log.info("inf");
         log.debug("dbg");
 
-        expect(errSpy).toHaveBeenCalledOnce();
-        expect(warnSpy).toHaveBeenCalledOnce();
-        expect(infoSpy).toHaveBeenCalledOnce();
-        expect(debugSpy).not.toHaveBeenCalled();
+        // error + warn go to console.error (2 calls)
+        expect(errSpy).toHaveBeenCalledTimes(2);
+        // info goes to console.log (1 call), debug is suppressed
+        expect(logSpy).toHaveBeenCalledOnce();
 
         errSpy.mockRestore();
-        warnSpy.mockRestore();
-        infoSpy.mockRestore();
-        debugSpy.mockRestore();
+        logSpy.mockRestore();
     });
 
     it("should respect log level: debug shows everything", () => {
         setLogLevel("debug");
         const errSpy = vi.spyOn(console, "error").mockImplementation(() => { });
-        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
-        const infoSpy = vi.spyOn(console, "info").mockImplementation(() => { });
-        const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => { });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
 
         const log = createLogger("test");
         log.error("err");
@@ -83,31 +72,29 @@ describe("logger", () => {
         log.info("inf");
         log.debug("dbg");
 
-        expect(errSpy).toHaveBeenCalledOnce();
-        expect(warnSpy).toHaveBeenCalledOnce();
-        expect(infoSpy).toHaveBeenCalledOnce();
-        expect(debugSpy).toHaveBeenCalledOnce();
+        // error + warn → console.error (2 calls)
+        expect(errSpy).toHaveBeenCalledTimes(2);
+        // info + debug → console.log (2 calls)
+        expect(logSpy).toHaveBeenCalledTimes(2);
 
         errSpy.mockRestore();
-        warnSpy.mockRestore();
-        infoSpy.mockRestore();
-        debugSpy.mockRestore();
+        logSpy.mockRestore();
     });
 
     it("should include tag and data in output", () => {
         setLogLevel("info");
-        const infoSpy = vi.spyOn(console, "info").mockImplementation(() => { });
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
 
         const log = createLogger("myTag");
         log.info("hello", { foo: "bar" });
 
-        expect(infoSpy).toHaveBeenCalledOnce();
-        const output = infoSpy.mock.calls[0][0] as string;
+        expect(logSpy).toHaveBeenCalledOnce();
+        const output = logSpy.mock.calls[0][0] as string;
         expect(output).toContain("[myTag]");
         expect(output).toContain("hello");
         expect(output).toContain('"foo":"bar"');
 
-        infoSpy.mockRestore();
+        logSpy.mockRestore();
     });
 
     it("should get/set log level", () => {

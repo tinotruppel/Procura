@@ -69,8 +69,9 @@ describe("Tasks MCP Server", () => {
                 expect(data.tools).toContain("get_attachment");
                 expect(data.tools.length).toBe(13);
             } else {
-                expect(data.tools).toEqual([]);
-                expect(data.note).toContain("TRELLO_API_KEY");
+                // Tools are always listed; note tells user to configure
+                expect(data.tools.length).toBeGreaterThan(0);
+                expect(data.note).toContain("TRELLO_APP_KEY");
             }
         });
     });

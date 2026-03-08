@@ -14,7 +14,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import {
     getAccessTokenForSession,
     createAuthHeaders,
-    isGoogleConfigured,
+    isGoogleConfiguredAsync,
     isValidSession,
     buildGoogleWwwAuthenticate,
     buildGoogleResourceMetadata,
@@ -24,12 +24,17 @@ import {
 // Session context
 // =============================================================================
 
-const sessionStore = new AsyncLocalStorage<string>();
+interface SessionContext {
+    session: string;
+    apiKey: string;
+}
+
+const sessionStore = new AsyncLocalStorage<SessionContext>();
 
 async function getToken(): Promise<string> {
-    const session = sessionStore.getStore();
-    if (!session) throw new Error("No Google session. Please connect your Google account.");
-    return getAccessTokenForSession(session);
+    const ctx = sessionStore.getStore();
+    if (!ctx) throw new Error("No Google session. Please connect your Google account.");
+    return getAccessTokenForSession(ctx.session, ctx.apiKey);
 }
 
 // =============================================================================
@@ -62,10 +67,8 @@ function summarizeSlide(page: Record<string, unknown>): Record<string, unknown> 
 // =============================================================================
 
 const mcpServer = new McpServer({ name: "google-slides", version: "1.0.0" });
-const configured = isGoogleConfigured();
 
-if (configured) {
-    mcpServer.registerTool("list_presentations", {
+mcpServer.registerTool("list_presentations", {
         description: "List user's Google Slides presentations",
         inputSchema: { query: z.string().optional().describe("Search query"), limit: z.number().optional().describe("Max results (default: 10, max: 50)") },
     }, async ({ query, limit: rawLimit }) => {
@@ -179,7 +182,6 @@ if (configured) {
         if (!response.ok) { const e = (await response.json()) as { error?: { message?: string } }; throw new Error(e.error?.message || `API error: ${response.status}`); }
         return { content: [{ type: "text" as const, text: JSON.stringify({ presentationId, deletedSlideId: pageObjectId, message: `Slide "${pageObjectId}" deleted` }, null, 2) }] };
     });
-}
 
 // =============================================================================
 // HTTP Routes
@@ -189,7 +191,10 @@ export const googleSlidesMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 googleSlidesMcpRoutes.all("/", async (c) => {
-    if (!configured) return c.json({ error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." }, 503);
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
+
+    if (!configured) return c.json({ error: "Google OAuth not configured. Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables." }, 503);
 
     const authHeader = c.req.header("Authorization") || "";
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
@@ -200,7 +205,7 @@ googleSlidesMcpRoutes.all("/", async (c) => {
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
-    return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+    return sessionStore.run({ session: sessionToken, apiKey: apiKey! }, () => transport.handleRequest(c));
 });
 
 googleSlidesMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
@@ -208,9 +213,12 @@ googleSlidesMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
 });
 
 googleSlidesMcpRoutes.get("/info", async (c) => {
+    const apiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isGoogleConfiguredAsync(apiKey);
     return c.json({
         name: "google-slides", version: "1.0.0",
         status: configured ? "ready" : "not_configured", configured,
-        tools: configured ? ["list_presentations", "get_presentation", "create_presentation", "add_slide", "add_text", "add_image", "replace_text", "delete_slide"] : [],
+        tools: ["list_presentations", "get_presentation", "create_presentation", "add_slide", "add_text", "add_image", "replace_text", "delete_slide"],
+        note: configured ? undefined : "Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables",
     });
 });

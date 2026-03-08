@@ -251,7 +251,13 @@ async function sendRequest<T>(
         if (response.status === 403) {
             throw new Error("Access denied");
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to extract error message from response body
+        let message = `HTTP ${response.status}`;
+        try {
+            const body = await response.json();
+            if (body.error) message = body.error;
+        } catch { /* no JSON body */ }
+        throw new Error(message);
     }
 
     // Check for session ID in response

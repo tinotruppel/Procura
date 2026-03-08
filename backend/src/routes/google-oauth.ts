@@ -18,13 +18,16 @@
 import { Hono } from "hono";
 import { randomBytes, createHash, randomUUID } from "crypto";
 import {
-    isGoogleConfigured,
-    getGoogleClientId,
-    getGoogleClientSecret,
+    isGoogleConfiguredAsync,
+    getGoogleClientIdAsync,
+    getGoogleClientSecretAsync,
     storeRefreshToken,
     hasConnected,
     deleteTokensByUser,
 } from "../lib/google-auth";
+import { createLogger } from "../lib/logger";
+
+const log = createLogger("google-oauth");
 
 // =============================================================================
 // In-memory stores (transient, short-lived)
@@ -45,6 +48,7 @@ interface PendingAuth {
     codeChallenge: string;
     codeChallengeMethod: string;
     scope: string;
+    vaultApiKey: string | undefined;
     createdAt: number;
 }
 
@@ -177,8 +181,12 @@ googleOAuthRoutes.post("/oauth/register", async (c) => {
  * GET /authorize
  * Authorization endpoint — validates PKCE, stores pending auth, redirects to Google
  */
-googleOAuthRoutes.get("/oauth/authorize", (c) => {
-    if (!isGoogleConfigured()) return c.json({ error: "Google OAuth not configured" }, 503);
+googleOAuthRoutes.get("/oauth/authorize", async (c) => {
+    const apiKey = c.req.query("api_key") || c.req.header("X-API-Key") || undefined;
+    log.info(`authorize: api_key present=${!!apiKey}`);
+    const configured = await isGoogleConfiguredAsync(apiKey);
+    log.info(`authorize: configured=${configured}`);
+    if (!configured) return c.json({ error: "Google OAuth not configured. Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables." }, 503);
 
     const clientId = c.req.query("client_id");
     const redirectUri = c.req.query("redirect_uri");
@@ -224,13 +232,16 @@ googleOAuthRoutes.get("/oauth/authorize", (c) => {
         codeChallenge,
         codeChallengeMethod,
         scope,
+        vaultApiKey: apiKey,
         createdAt: Date.now(),
     });
 
     // Redirect to Google OAuth
     const base = getBaseUrl(c);
+    const googleClientId = await getGoogleClientIdAsync(apiKey);
+    log.info(`authorize: resolved googleClientId=${googleClientId ? googleClientId.substring(0, 10) + '...' : 'MISSING'}`);
     const googleParams = new URLSearchParams({
-        client_id: getGoogleClientId(),
+        client_id: googleClientId!,
         redirect_uri: `${base}/google/auth/google/callback`,
         response_type: "code",
         scope: GOOGLE_SCOPES,
@@ -266,18 +277,24 @@ googleOAuthRoutes.get("/auth/google/callback", async (c) => {
     const base = getBaseUrl(c);
 
     try {
+        // Resolve Google credentials from vault
+        const googleClientId = await getGoogleClientIdAsync(pending.vaultApiKey);
+        const googleClientSecret = await getGoogleClientSecretAsync(pending.vaultApiKey);
+        log.info(`callback: resolved googleClientId=${googleClientId ? googleClientId.substring(0, 10) + '...' : 'MISSING'}, googleClientSecret present=${!!googleClientSecret}`);
+
         // Exchange Google code for tokens
         const response = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({
-                client_id: getGoogleClientId(),
-                client_secret: getGoogleClientSecret(),
+                client_id: googleClientId!,
+                client_secret: googleClientSecret!,
                 code: googleCode,
                 grant_type: "authorization_code",
                 redirect_uri: `${base}/google/auth/google/callback`,
             }).toString(),
         });
+
 
         if (!response.ok) {
             console.error("Google token exchange failed:", await response.text());
@@ -304,7 +321,7 @@ googleOAuthRoutes.get("/auth/google/callback", async (c) => {
         const userId = userInfo.email || userInfo.id || randomUUID();
 
         // Store refresh token (encrypted) and get session token
-        const sessionToken = await storeRefreshToken(userId, data.refresh_token);
+        const sessionToken = await storeRefreshToken(userId, data.refresh_token, pending.vaultApiKey!);
 
         // Generate a short-lived auth code that maps to the session token
         const authCode = generateSecureCode();
@@ -395,8 +412,9 @@ googleOAuthRoutes.post("/oauth/token", async (c) => {
 googleOAuthRoutes.get("/auth/google/status", async (c) => {
     const userId = c.req.query("userId");
     if (!userId) return c.json({ error: "userId query parameter is required" }, 400);
+    const apiKey = c.req.header("X-API-Key") || undefined;
     const connected = await hasConnected(userId);
-    return c.json({ configured: isGoogleConfigured(), connected });
+    return c.json({ configured: await isGoogleConfiguredAsync(apiKey), connected });
 });
 
 /**

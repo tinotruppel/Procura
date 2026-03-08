@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
+import { resolveSecret } from "../lib/vault-resolver";
 
 // =============================================================================
 // Types
@@ -270,13 +271,15 @@ async function answerQuestion(
 // MCP Server Setup
 // =============================================================================
 
-function getDefaultAuth(): DocumentMediaAuth | null {
-    const apiKey = process.env.MISTRAL_API_KEY;
+// Request-scoped API key (set per-request in the route handler)
+let currentRequestApiKey: string | undefined;
 
-    if (!apiKey) {
-        return null;
-    }
-
+/**
+ * Resolve auth from vault (per-request) or process.env (fallback).
+ */
+async function resolveAuth(): Promise<DocumentMediaAuth | null> {
+    const apiKey = await resolveSecret("MISTRAL_API_KEY", currentRequestApiKey);
+    if (!apiKey) return null;
     return { apiKey };
 }
 
@@ -285,11 +288,8 @@ const mcpServer = new McpServer({
     version: "1.0.0",
 });
 
-const auth = getDefaultAuth();
-
-if (auth) {
-    // --- transcribe_audio ---
-    mcpServer.registerTool(
+// --- transcribe_audio ---
+mcpServer.registerTool(
         "transcribe_audio",
         {
             description: "Transcribe speech from audio files to text. Supports various audio formats (mp3, wav, m4a, webm, etc.)",
@@ -301,6 +301,14 @@ if (auth) {
             },
         },
         async ({ fileData, fileName, mimeType, language }) => {
+            const auth = await resolveAuth();
+            if (!auth) {
+                return {
+                    content: [{ type: "text" as const, text: JSON.stringify({ error: "MISTRAL_API_KEY not configured. Store it via vault or set as environment variable." }, null, 2) }],
+                    isError: true
+                };
+            }
+
             // Validate audio file type
             if (!mimeType.startsWith("audio/")) {
                 return {
@@ -357,92 +365,92 @@ if (auth) {
         }
     );
 
-    // --- analyze_document ---
-    mcpServer.registerTool(
-        "analyze_document",
-        {
-            description: "Extract and analyze content from PDFs and images using OCR. Can also answer questions about the document.",
-            inputSchema: {
-                fileData: z.string().describe("Base64-encoded file data (without data URL prefix)"),
-                fileName: z.string().describe("Original filename including extension"),
-                mimeType: z.string().describe("MIME type (e.g. application/pdf, image/png, image/jpeg)"),
-                question: z.string().optional().describe("Question to answer about the document. If omitted, returns raw OCR text."),
-            },
+// --- analyze_document ---
+mcpServer.registerTool(
+    "analyze_document",
+    {
+        description: "Extract and analyze content from PDFs and images using OCR. Can also answer questions about the document.",
+        inputSchema: {
+            fileData: z.string().describe("Base64-encoded file data (without data URL prefix)"),
+            fileName: z.string().describe("Original filename including extension"),
+            mimeType: z.string().describe("MIME type (e.g. application/pdf, image/png, image/jpeg)"),
+            question: z.string().optional().describe("Question to answer about the document. If omitted, returns raw OCR text."),
         },
-        async ({ fileData, fileName, mimeType, question }) => {
-            const isImage = mimeType.startsWith("image/");
-            const isPdf = mimeType === "application/pdf";
+    },
+    async ({ fileData, fileName, mimeType, question }) => {
+        const auth = await resolveAuth();
+        if (!auth) {
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "MISTRAL_API_KEY not configured. Store it via vault or set as environment variable." }, null, 2) }],
+                isError: true
+            };
+        }
 
-            if (!isImage && !isPdf) {
-                return {
-                    content: [{
-                        type: "text" as const,
-                        text: JSON.stringify({
-                            error: `File type not supported. Expected image/* or application/pdf, got ${mimeType}`
-                        }, null, 2)
-                    }],
-                    isError: true
-                };
-            }
+        const isImage = mimeType.startsWith("image/");
+        const isPdf = mimeType === "application/pdf";
 
-            // For images, use Pixtral directly with data URL
-            if (isImage) {
-                const dataUrl = `data:${mimeType};base64,${fileData}`;
-                const answer = await analyzeImage(auth.apiKey, dataUrl, question);
-
-                return {
-                    content: [{
-                        type: "text" as const,
-                        text: JSON.stringify({
-                            content: answer,
-                            question: question || "(image description)",
-                            fileName,
-                        }, null, 2)
-                    }]
-                };
-            }
-
-            // For PDFs, use OCR API (upload → signed URL → OCR)
-            // Step 1: Upload file
-            const fileId = await uploadFile(auth.apiKey, fileData, mimeType, fileName, "ocr");
-
-            // Step 2: Get signed URL
-            const signedUrl = await getSignedUrl(auth.apiKey, fileId);
-
-            // Step 3: Perform OCR
-            const ocrText = await performOcr(auth.apiKey, signedUrl);
-
-            // If a question was provided, answer it based on OCR text
-            if (question) {
-                const answer = await answerQuestion(auth.apiKey, ocrText, question);
-
-                return {
-                    content: [{
-                        type: "text" as const,
-                        text: JSON.stringify({
-                            answer,
-                            question,
-                            ocrTextLength: ocrText.length,
-                            fileName,
-                        }, null, 2)
-                    }]
-                };
-            }
-
-            // No question - return raw OCR text
+        if (!isImage && !isPdf) {
             return {
                 content: [{
                     type: "text" as const,
                     text: JSON.stringify({
-                        content: ocrText,
+                        error: `File type not supported. Expected image/* or application/pdf, got ${mimeType}`
+                    }, null, 2)
+                }],
+                isError: true
+            };
+        }
+
+        // For images, use Pixtral directly with data URL
+        if (isImage) {
+            const dataUrl = `data:${mimeType};base64,${fileData}`;
+            const answer = await analyzeImage(auth.apiKey, dataUrl, question);
+
+            return {
+                content: [{
+                    type: "text" as const,
+                    text: JSON.stringify({
+                        content: answer,
+                        question: question || "(image description)",
                         fileName,
-                        message: "OCR extraction complete. The document content is in the 'content' field.",
                     }, null, 2)
                 }]
             };
         }
-    );
-}
+
+        // For PDFs, use OCR API (upload → signed URL → OCR)
+        const fileId = await uploadFile(auth.apiKey, fileData, mimeType, fileName, "ocr");
+        const signedUrl = await getSignedUrl(auth.apiKey, fileId);
+        const ocrText = await performOcr(auth.apiKey, signedUrl);
+
+        if (question) {
+            const answer = await answerQuestion(auth.apiKey, ocrText, question);
+
+            return {
+                content: [{
+                    type: "text" as const,
+                    text: JSON.stringify({
+                        answer,
+                        question,
+                        ocrTextLength: ocrText.length,
+                        fileName,
+                    }, null, 2)
+                }]
+            };
+        }
+
+        return {
+            content: [{
+                type: "text" as const,
+                text: JSON.stringify({
+                    content: ocrText,
+                    fileName,
+                    message: "OCR extraction complete. The document content is in the 'content' field.",
+                }, null, 2)
+            }]
+        };
+    }
+);
 
 // =============================================================================
 // HTTP Routes
@@ -453,27 +461,30 @@ export const documentMediaMcpRoutes = new Hono();
 const transport = new StreamableHTTPTransport();
 
 documentMediaMcpRoutes.all("/", async (c) => {
-    if (!auth) {
-        return c.json({
-            error: "Document/Media MCP server not configured. Set MISTRAL_API_KEY environment variable."
-        }, 503);
-    }
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
 
-    if (!mcpServer.isConnected()) {
-        await mcpServer.connect(transport);
-    }
+    try {
+        if (!mcpServer.isConnected()) {
+            await mcpServer.connect(transport);
+        }
 
-    return transport.handleRequest(c);
+        return transport.handleRequest(c);
+    } catch (e) {
+        console.error("[document-media-mcp] Error handling request:", e);
+        return c.json({ error: "Internal server error" }, 500);
+    }
 });
 
 documentMediaMcpRoutes.get("/info", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const auth = await resolveAuth();
     return c.json({
         name: "document-media",
         version: "1.0.0",
         description: "Document OCR and audio transcription",
         status: auth ? "ready" : "not_configured",
         configured: !!auth,
-        tools: auth ? ["transcribe_audio", "analyze_document"] : [],
-        note: auth ? undefined : "Set MISTRAL_API_KEY environment variable"
+        tools: ["transcribe_audio", "analyze_document"],
+        note: auth ? undefined : "Store MISTRAL_API_KEY in vault or set as environment variable"
     });
 });

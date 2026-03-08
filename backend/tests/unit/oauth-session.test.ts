@@ -2,7 +2,7 @@
  * Unit Tests for OAuth Session Manager
  *
  * Tests the pure functions in oauth-session.ts:
- * - Token encryption/decryption (AES-256-GCM)
+ * - Token encryption/decryption (BYOK via vault-crypto)
  * - Access token caching (in-memory)
  * - Auth header creation
  *
@@ -10,7 +10,7 @@
  * are tested indirectly via google-oauth.test.ts integration tests.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 import {
     encryptToken,
@@ -21,84 +21,75 @@ import {
     createAuthHeaders,
 } from "../../src/lib/oauth-session";
 
-// Set encryption key for tests
-const TEST_KEY = "a".repeat(64); // 32-byte hex key
+// Test API key (simulates user's BYOK key)
+const TEST_API_KEY = "test-api-key-for-byok-encryption-12345";
+const DIFFERENT_API_KEY = "different-api-key-for-testing-67890";
 
 describe("OAuth Session Manager", () => {
     beforeEach(() => {
         clearTokenCache();
-        process.env.TOKEN_ENCRYPTION_KEY = TEST_KEY;
-    });
-
-    afterEach(() => {
-        delete process.env.TOKEN_ENCRYPTION_KEY;
     });
 
     // =========================================================================
-    // Encryption
+    // Encryption (BYOK)
     // =========================================================================
 
     describe("encryptToken / decryptToken", () => {
-        it("should encrypt and decrypt a token", () => {
+        it("should encrypt and decrypt a token using API key", () => {
             const original = "my-secret-refresh-token";
-            const encrypted = encryptToken(original);
+            const encrypted = encryptToken(TEST_API_KEY, original);
             expect(encrypted).not.toBe(original);
-            expect(encrypted.split(":")).toHaveLength(3);
-            const decrypted = decryptToken(encrypted);
+            // BYOK format is JSON with s, i, t, c fields
+            const parsed = JSON.parse(encrypted);
+            expect(parsed).toHaveProperty("s");
+            expect(parsed).toHaveProperty("i");
+            expect(parsed).toHaveProperty("t");
+            expect(parsed).toHaveProperty("c");
+            const decrypted = decryptToken(TEST_API_KEY, encrypted);
             expect(decrypted).toBe(original);
         });
 
-        it("should produce different ciphertexts for same input (random IV)", () => {
+        it("should produce different ciphertexts for same input (random salt+IV)", () => {
             const token = "same-token";
-            const enc1 = encryptToken(token);
-            const enc2 = encryptToken(token);
+            const enc1 = encryptToken(TEST_API_KEY, token);
+            const enc2 = encryptToken(TEST_API_KEY, token);
             expect(enc1).not.toBe(enc2);
-            expect(decryptToken(enc1)).toBe(token);
-            expect(decryptToken(enc2)).toBe(token);
+            expect(decryptToken(TEST_API_KEY, enc1)).toBe(token);
+            expect(decryptToken(TEST_API_KEY, enc2)).toBe(token);
         });
 
-        it("should encrypt empty string to valid format", () => {
-            const encrypted = encryptToken("");
-            // Empty plaintext produces empty ciphertext hex, which is falsy → format check throws
-            expect(encrypted.split(":")).toHaveLength(3);
+        it("should encrypt empty string", () => {
+            const encrypted = encryptToken(TEST_API_KEY, "");
+            const decrypted = decryptToken(TEST_API_KEY, encrypted);
+            expect(decrypted).toBe("");
         });
 
         it("should handle long tokens", () => {
             const longToken = "x".repeat(2048);
-            const encrypted = encryptToken(longToken);
-            expect(decryptToken(encrypted)).toBe(longToken);
+            const encrypted = encryptToken(TEST_API_KEY, longToken);
+            expect(decryptToken(TEST_API_KEY, encrypted)).toBe(longToken);
         });
 
         it("should handle unicode content", () => {
             const unicodeToken = "token-mit-überzeichen-🔐";
-            const encrypted = encryptToken(unicodeToken);
-            expect(decryptToken(encrypted)).toBe(unicodeToken);
+            const encrypted = encryptToken(TEST_API_KEY, unicodeToken);
+            expect(decryptToken(TEST_API_KEY, encrypted)).toBe(unicodeToken);
         });
 
-        it("should throw on invalid encrypted format", () => {
-            expect(() => decryptToken("invalid")).toThrow("Invalid encrypted token format");
+        it("should fail to decrypt with wrong API key", () => {
+            const encrypted = encryptToken(TEST_API_KEY, "secret");
+            expect(() => decryptToken(DIFFERENT_API_KEY, encrypted)).toThrow();
         });
 
-        it("should throw on partial format (only 2 parts)", () => {
-            expect(() => decryptToken("aa:bb")).toThrow("Invalid encrypted token format");
-        });
-
-        it("should throw without encryption key", () => {
-            delete process.env.TOKEN_ENCRYPTION_KEY;
-            expect(() => encryptToken("test")).toThrow("TOKEN_ENCRYPTION_KEY not set");
-        });
-
-        it("should throw on decrypt without encryption key", () => {
-            const encrypted = encryptToken("test");
-            delete process.env.TOKEN_ENCRYPTION_KEY;
-            expect(() => decryptToken(encrypted)).toThrow("TOKEN_ENCRYPTION_KEY not set");
+        it("should throw on invalid JSON format", () => {
+            expect(() => decryptToken(TEST_API_KEY, "not-json")).toThrow();
         });
 
         it("should throw on tampered ciphertext", () => {
-            const encrypted = encryptToken("test");
-            const parts = encrypted.split(":");
-            parts[2] = "ff".repeat(parts[2].length / 2); // tamper ciphertext
-            expect(() => decryptToken(parts.join(":"))).toThrow();
+            const encrypted = encryptToken(TEST_API_KEY, "test");
+            const parsed = JSON.parse(encrypted);
+            parsed.c = "ff".repeat(parsed.c.length / 2); // tamper ciphertext
+            expect(() => decryptToken(TEST_API_KEY, JSON.stringify(parsed))).toThrow();
         });
     });
 

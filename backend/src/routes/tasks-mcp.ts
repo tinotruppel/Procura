@@ -13,8 +13,8 @@ import { z } from "zod";
 import { AsyncLocalStorage } from "async_hooks";
 import {
     getTokenForSession,
-    getTrelloAppKey,
-    isTrelloConfigured,
+    getTrelloAppKeyAsync,
+    isTrelloConfiguredAsync,
     isValidSession,
 } from "../lib/trello-auth";
 
@@ -24,14 +24,20 @@ const TRELLO_API_BASE = "https://api.trello.com/1";
 // Session context (per-request)
 // =============================================================================
 
-const sessionStore = new AsyncLocalStorage<string>();
+interface SessionContext {
+    session: string;
+    apiKey: string;
+}
+
+const sessionStore = new AsyncLocalStorage<SessionContext>();
 
 /** Get auth query params for the current request's session */
 async function getAuthParams(): Promise<string> {
-    const session = sessionStore.getStore();
-    if (!session) throw new Error("No Trello session. Please connect your Trello account.");
-    const token = await getTokenForSession(session);
-    return `key=${getTrelloAppKey()}&token=${token}`;
+    const ctx = sessionStore.getStore();
+    if (!ctx) throw new Error("No Trello session. Please connect your Trello account.");
+    const token = await getTokenForSession(ctx.session, ctx.apiKey);
+    const appKey = await getTrelloAppKeyAsync(ctx.apiKey);
+    return `key=${appKey}&token=${token}`;
 }
 
 // =============================================================================
@@ -108,11 +114,11 @@ const mcpServer = new McpServer({
     version: "1.0.0",
 });
 
-const configured = isTrelloConfigured();
+// Request-scoped API key (set per-request in the route handler)
+let currentRequestApiKey: string | undefined;
 
-if (configured) {
-    // --- list_projects ---
-    mcpServer.registerTool(
+// --- list_projects ---
+mcpServer.registerTool(
         "list_projects",
         {
             description: "List available projects",
@@ -584,7 +590,6 @@ if (configured) {
             };
         }
     );
-}
 
 // =============================================================================
 // HTTP Routes with Hono MCP Transport
@@ -599,8 +604,11 @@ const transport = new StreamableHTTPTransport();
  * MCP endpoint - handles all MCP communication
  */
 tasksMcpRoutes.all("/", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isTrelloConfiguredAsync(currentRequestApiKey);
+
     if (!configured) {
-        return c.json({ error: "Tasks MCP server not configured. Set TRELLO_APP_KEY environment variable." }, 503);
+        return c.json({ error: "Tasks MCP server not configured. Store TRELLO_APP_KEY in vault or set as environment variable." }, 503);
     }
 
     // Extract session token from Authorization header
@@ -622,7 +630,7 @@ tasksMcpRoutes.all("/", async (c) => {
         await mcpServer.connect(transport);
     }
 
-    return sessionStore.run(sessionToken, () => transport.handleRequest(c));
+    return sessionStore.run({ session: sessionToken, apiKey: currentRequestApiKey! }, () => transport.handleRequest(c));
 });
 
 /**
@@ -646,18 +654,20 @@ tasksMcpRoutes.get("/.well-known/oauth-protected-resource", (c) => {
  * Health/info endpoint
  */
 tasksMcpRoutes.get("/info", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const configured = await isTrelloConfiguredAsync(currentRequestApiKey);
     return c.json({
         name: "tasks",
         version: "1.0.0",
         description: "Task and ticket management",
         status: configured ? "ready" : "not_configured",
         configured,
-        tools: configured ? [
+        tools: [
             "list_projects", "list_statuses", "list_labels", "list_tickets",
             "create_ticket", "get_ticket", "update_ticket", "archive_ticket",
             "list_comments", "add_comment",
             "list_attachments", "add_attachment", "get_attachment"
-        ] : [],
-        note: configured ? undefined : "Set TRELLO_APP_KEY environment variable"
+        ],
+        note: configured ? undefined : "Store TRELLO_APP_KEY in vault or set as environment variable"
     });
 });

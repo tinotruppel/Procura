@@ -16,6 +16,7 @@ import {
     hasConnected as checkConnected,
     deleteTokensByUser as deleteTokens,
 } from "./oauth-session";
+import { resolveSecret } from "./vault-resolver";
 
 const PROVIDER = "trello";
 
@@ -31,6 +32,15 @@ export function getTrelloAppKey(): string {
     return process.env.TRELLO_APP_KEY || "";
 }
 
+export async function isTrelloConfiguredAsync(apiKey: string | undefined): Promise<boolean> {
+    const appKey = await resolveSecret("TRELLO_APP_KEY", apiKey);
+    return !!appKey;
+}
+
+export async function getTrelloAppKeyAsync(apiKey: string | undefined): Promise<string> {
+    return (await resolveSecret("TRELLO_APP_KEY", apiKey)) || "";
+}
+
 // =============================================================================
 // Provider-bound wrappers
 // =============================================================================
@@ -39,8 +49,8 @@ export function getTrelloAppKey(): string {
  * Store a Trello user token (encrypted) and return a session token.
  * Reuses oauth-session's refresh_token column since Trello tokens are long-lived.
  */
-export function storeUserToken(keyId: string, userToken: string): Promise<string> {
-    return storeToken(keyId, PROVIDER, userToken);
+export function storeUserToken(keyId: string, userToken: string, apiKey: string): Promise<string> {
+    return storeToken(keyId, PROVIDER, userToken, apiKey);
 }
 
 export function isValidSession(sessionToken: string): Promise<boolean> {
@@ -63,15 +73,16 @@ export function deleteTokensByUser(keyId: string): Promise<void> {
  * Get Trello user token for the current session.
  * Unlike Google, Trello tokens don't expire, so no refresh logic is needed.
  */
-export async function getTokenForSession(sessionToken: string): Promise<string> {
-    if (!isTrelloConfigured()) {
-        throw new Error("Trello not configured. Set TRELLO_APP_KEY.");
+export async function getTokenForSession(sessionToken: string, apiKey: string): Promise<string> {
+    if (!apiKey) {
+        throw new Error("API key required to decrypt Trello token.");
     }
 
-    const token = await getRefreshTokenBySession(sessionToken, PROVIDER);
+    const token = await getRefreshTokenBySession(sessionToken, PROVIDER, apiKey);
     if (!token) {
         throw new Error("Invalid or expired session. Please reconnect your Trello account.");
     }
 
     return token;
 }
+

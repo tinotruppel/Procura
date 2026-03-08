@@ -16,7 +16,6 @@ const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 12;  // AES-GCM recommended
 const SALT_LENGTH = 16;
-const _TAG_LENGTH = 16; // 128-bit auth tag (used implicitly by AES-GCM)
 
 /**
  * Derive a 256-bit AES key from the API key using PBKDF2.
@@ -58,7 +57,7 @@ export function encryptSecret(apiKey: string, plaintext: string): EncryptedPaylo
 export function decryptSecret(apiKey: string, payload: EncryptedPayload): string {
     const key = deriveKey(apiKey, payload.salt);
 
-    const decipher = createDecipheriv("aes-256-gcm", key, payload.iv);
+    const decipher = createDecipheriv("aes-256-gcm", key, payload.iv, { authTagLength: 16 });
     decipher.setAuthTag(payload.tag);
 
     const decrypted = Buffer.concat([

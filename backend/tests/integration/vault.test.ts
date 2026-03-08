@@ -109,7 +109,7 @@ describe("Vault Routes", () => {
         });
 
         it("should return empty array for new API key with no secrets", async () => {
-            const res = await request("GET", "/vault/secrets", "brand-new-key-no-secrets");
+            await request("GET", "/vault/secrets", "brand-new-key-no-secrets");
             // This will 401 if the key is not in API_KEYS, so use key B which has no Google secrets
             const resB = await request("GET", "/vault/secrets", API_KEY_B);
             expect(resB.status).toBe(200);

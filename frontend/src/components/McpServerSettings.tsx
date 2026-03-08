@@ -28,6 +28,7 @@ import {
     getMcpServers,
     addMcpServer,
     removeMcpServer,
+    getMcpProxyConfig,
     getMcpToolStates,
     setMcpToolEnabled,
     getMcpToolKey,
@@ -241,11 +242,13 @@ export function McpServerSettings({ refreshKey }: McpServerSettingsProps) {
         setIsAuthenticating(serverId);
 
         try {
+            const proxyConfig = await getMcpProxyConfig();
             const token = await launchOAuthPopup(
                 server.url,
                 server.resourceMetadataUrl,
                 server.requiredScope,
-                server.useDirectAuthServer
+                server.useDirectAuthServer,
+                proxyConfig?.apiKey
             );
 
             // Update server with token

@@ -22,10 +22,12 @@ export async function resolveSecret(
     name: string,
     apiKey: string | undefined,
 ): Promise<string | undefined> {
+    log.info(`resolveSecret("${name}"): apiKey provided=${!!apiKey}`);
     // Try vault first (if apiKey is available)
     if (apiKey) {
         const keyId = hashApiKey(apiKey);
         const row = await getSecret(keyId, name);
+        log.info(`resolveSecret("${name}"): vault row found=${!!row} (keyId=${keyId.substring(0, 8)}...)`);
         if (row) {
             try {
                 const value = decryptSecret(apiKey, {
@@ -34,19 +36,18 @@ export async function resolveSecret(
                     iv: row.iv,
                     tag: row.tag,
                 });
-                log.debug(`resolved "${name}" from vault`);
+                log.info(`resolveSecret("${name}"): resolved from vault (length=${value.length})`);
                 return value;
-            } catch {
-                log.warn(`failed to decrypt "${name}"`);
+            } catch (err) {
+                log.warn(`resolveSecret("${name}"): failed to decrypt from vault: ${err}`);
             }
         }
     }
 
     // Fallback to environment variable
     const envValue = process.env[name];
-    if (envValue) {
-        log.debug(`resolved "${name}" from env`);
-    }
+    const suffix = envValue ? ` (length=${envValue.length})` : "";
+    log.info(`resolveSecret("${name}"): env fallback present=${!!envValue}${suffix}`);
     return envValue;
 }
 

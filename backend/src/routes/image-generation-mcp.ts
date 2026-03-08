@@ -11,6 +11,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { z } from "zod";
 import { GoogleGenAI } from "@google/genai";
+import { resolveSecret } from "../lib/vault-resolver";
 
 // =============================================================================
 // Types
@@ -62,69 +63,73 @@ async function generateImage(
 // MCP Server Setup
 // =============================================================================
 
-function getDefaultAuth(): ImageGenerationAuth | null {
-    const apiKey = process.env.GEMINI_API_KEY;
+// Request-scoped API key (set per-request in the route handler)
+let currentRequestApiKey: string | undefined;
 
-    if (!apiKey) {
-        return null;
-    }
-
+/**
+ * Resolve auth from vault (per-request) or process.env (fallback).
+ */
+async function resolveAuth(): Promise<ImageGenerationAuth | null> {
+    const apiKey = await resolveSecret("GEMINI_API_KEY", currentRequestApiKey);
+    if (!apiKey) return null;
     return { apiKey };
 }
 
-// Create MCP server instance
+// Create MCP server instance — tools are always registered
 const mcpServer = new McpServer({
     name: "image-generation",
     version: "1.0.0",
 });
 
-const auth = getDefaultAuth();
-
-if (auth) {
-    // --- generate_image ---
-    mcpServer.registerTool(
-        "generate_image",
-        {
-            description: "Generate an image from a text prompt using Google Imagen AI",
-            inputSchema: {
-                prompt: z.string().describe("Text description of the image to generate. Be detailed and specific for best results."),
-                aspect_ratio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio of the generated image. Default: 1:1 (square)"),
-                number_of_images: z.number().min(1).max(4).optional().describe("Number of images to generate (1-4). Default: 1"),
-            },
+// --- generate_image ---
+mcpServer.registerTool(
+    "generate_image",
+    {
+        description: "Generate an image from a text prompt using Google Imagen AI",
+        inputSchema: {
+            prompt: z.string().describe("Text description of the image to generate. Be detailed and specific for best results."),
+            aspect_ratio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional().describe("Aspect ratio of the generated image. Default: 1:1 (square)"),
+            number_of_images: z.number().min(1).max(4).optional().describe("Number of images to generate (1-4). Default: 1"),
         },
-        async ({ prompt, aspect_ratio, number_of_images }) => {
-            const aspectRatio = aspect_ratio || "1:1";
-            const numImages = Math.min(4, Math.max(1, number_of_images || 1));
-
-            const result = await generateImage(
-                auth.apiKey,
-                prompt,
-                aspectRatio,
-                numImages
-            );
-
-            if (result.images.length === 1) {
-                // Single image - return as image content
-                return {
-                    content: [{
-                        type: "image" as const,
-                        data: result.images[0],
-                        mimeType: result.mimeType,
-                    }]
-                };
-            }
-
-            // Multiple images - return all as separate image contents
+    },
+    async ({ prompt, aspect_ratio, number_of_images }) => {
+        const auth = await resolveAuth();
+        if (!auth) {
             return {
-                content: result.images.map((imageData, _index) => ({
-                    type: "image" as const,
-                    data: imageData,
-                    mimeType: result.mimeType,
-                }))
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "GEMINI_API_KEY not configured. Store it via vault or set as environment variable." }, null, 2) }],
+                isError: true
             };
         }
-    );
-}
+
+        const aspectRatio = aspect_ratio || "1:1";
+        const numImages = Math.min(4, Math.max(1, number_of_images || 1));
+
+        const result = await generateImage(
+            auth.apiKey,
+            prompt,
+            aspectRatio,
+            numImages
+        );
+
+        if (result.images.length === 1) {
+            return {
+                content: [{
+                    type: "image" as const,
+                    data: result.images[0],
+                    mimeType: result.mimeType,
+                }]
+            };
+        }
+
+        return {
+            content: result.images.map((imageData, _index) => ({
+                type: "image" as const,
+                data: imageData,
+                mimeType: result.mimeType,
+            }))
+        };
+    }
+);
 
 // =============================================================================
 // HTTP Routes with Hono MCP Transport
@@ -138,30 +143,34 @@ const transport = new StreamableHTTPTransport();
  * MCP endpoint - handles all MCP communication
  */
 imageGenerationMcpRoutes.all("/", async (c) => {
-    if (!auth) {
-        return c.json({
-            error: "Image Generation MCP server not configured. Set GEMINI_API_KEY environment variable."
-        }, 503);
-    }
+    // Set request-scoped API key for vault resolution
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
 
-    if (!mcpServer.isConnected()) {
-        await mcpServer.connect(transport);
-    }
+    try {
+        if (!mcpServer.isConnected()) {
+            await mcpServer.connect(transport);
+        }
 
-    return transport.handleRequest(c);
+        return transport.handleRequest(c);
+    } catch (e) {
+        console.error("[image-generation-mcp] Error handling request:", e);
+        return c.json({ error: "Internal server error" }, 500);
+    }
 });
 
 /**
  * Health/info endpoint
  */
 imageGenerationMcpRoutes.get("/info", async (c) => {
+    currentRequestApiKey = c.req.header("X-API-Key") || undefined;
+    const auth = await resolveAuth();
     return c.json({
         name: "image-generation",
         version: "1.0.0",
         status: auth ? "ready" : "not_configured",
         configured: !!auth,
-        tools: auth ? ["generate_image"] : [],
+        tools: ["generate_image"],
         model: "imagen-4.0-generate-001",
-        note: auth ? undefined : "Set GEMINI_API_KEY environment variable"
+        note: auth ? undefined : "Store GEMINI_API_KEY in vault or set as environment variable"
     });
 });
