@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-08
+
+### Added
+
+- **BYOK Token Encryption** — OAuth tokens (Trello, Google) now encrypted with user's own API key instead of server-side `TOKEN_ENCRYPTION_KEY`, consistent with vault secrets BYOK pattern
+- **Production File Logging** — Auto-detect `app.log` next to `dist/` in production for Plesk/Passenger environments
+
+### Changed
+
+- **Async Vault Resolution** — All OAuth routes and MCP handlers now use async vault resolvers for Google and Trello credentials
+- **Logger Passenger Compatibility** — `console.info`/`console.debug` → `console.log`, `console.warn` → `console.error` for reliable Phusion Passenger log capture
+- **MCP Session Context** — All MCP routes now pass user API key through `AsyncLocalStorage` for BYOK token decryption
+
+### Fixed
+
+- **OAuth Token Storage 500** — Fixed production crash where `TOKEN_ENCRYPTION_KEY` env var was missing by eliminating it entirely (BYOK)
+- **GCM Auth Tag Length** — Added explicit `authTagLength: 16` to `createDecipheriv` in vault-crypto (Semgrep security finding)
+- **Release Script** — Fixed manifest.json version not being bumped during release
+
+### Removed
+
+- **`TOKEN_ENCRYPTION_KEY`** — No longer needed; replaced by user's API key (BYOK)
+- **Sync Config Functions** — Removed unused `isGoogleConfigured()`, `getGoogleClientId()`, `getGoogleClientSecret()` from google-auth.ts
+
 ## [0.2.0] - 2026-03-06
 
 ### Added
