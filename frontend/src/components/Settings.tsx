@@ -199,7 +199,7 @@ function ToolCustomActionUI({
     );
 }
 
-function BiometricSettings() {
+export function BiometricSettings() {
     const [available, setAvailable] = useState(false);
     const [enrolled, setEnrolled] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -782,8 +782,8 @@ export function Settings({ onBack }: SettingsProps) {
                     </CardContent>
                 </Card>
 
-                {/* Biometric Unlock */}
-                <BiometricSettings />
+                {/* Biometric Unlock — hidden: WebAuthn PRF unreliable across devices */}
+                {/* <BiometricSettings /> */}
 
                 <Card>
                     <CardHeader className="pb-4">

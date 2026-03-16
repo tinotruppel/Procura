@@ -163,6 +163,10 @@ function processChildrenWithEmojis(children: React.ReactNode): React.ReactElemen
     if (typeof children === 'number' || typeof children === 'boolean') {
         return <>{children}</>;
     }
+    // Handle plain objects (e.g. JSON from LLM) - stringify instead of [object Object]
+    if (typeof children === 'object' && !React.isValidElement(children) && !Array.isArray(children)) {
+        return <>{replaceEmojisWithTwemoji(JSON.stringify(children, null, 2))}</>;
+    }
     // Handle arrays
     if (Array.isArray(children)) {
         return (
@@ -899,13 +903,14 @@ export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, is
                     {/* Message content */}
                     <div
                         className={cn(
-                            "max-w-[85%] rounded-lg px-4 py-2 text-sm",
+                            "max-w-[85%] rounded-lg px-4 py-2 text-sm overflow-hidden",
                             message.role === "user"
                                 ? "bg-primary text-primary-foreground"
                                 : "w-full bg-muted text-foreground",
                             // Shimmer effect while streaming
                             message.role === "model" && isStreaming && index === messages.length - 1 && "animate-shimmer"
                         )}
+                        style={{ overflowWrap: 'anywhere' }}
                     >
                         {/* Images (for user messages) */}
                         {message.role === "user" && message.images && message.images.length > 0 && (
