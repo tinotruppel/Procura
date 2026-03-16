@@ -446,14 +446,13 @@ export function McpServerSettings({ refreshKey }: McpServerSettingsProps) {
                     </div>
                 )}
 
-                {/* Server list */}
                 {servers.length === 0 && !isAddingServer ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
                         No MCP servers connected
                     </p>
                 ) : (
                     <div className="space-y-2">
-                        {servers.map(({ server, tools }) => (
+                        {[...servers].sort((a, b) => a.server.name.localeCompare(b.server.name)).map(({ server, tools }) => (
                             <div
                                 key={server.id}
                                 className="rounded-lg border bg-background overflow-hidden"
