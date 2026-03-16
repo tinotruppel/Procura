@@ -19,6 +19,7 @@
  *   GET    /mcp/google-docs           - Google Docs MCP server
  *   GET    /mcp/google-sheets         - Google Sheets MCP server
  *   GET    /mcp/google-slides         - Google Slides MCP server
+ *   GET    /mcp/google-drive          - Google Drive MCP server
  *   GET    /mcp/gmail                 - Gmail MCP server
  *   GET    /mcp/google-calendar       - Google Calendar MCP server
  */
@@ -42,6 +43,7 @@ import { imageGenerationMcpRoutes } from "./routes/image-generation-mcp";
 import { googleDocsMcpRoutes } from "./routes/google-docs-mcp";
 import { googleSheetsMcpRoutes } from "./routes/google-sheets-mcp";
 import { googleSlidesMcpRoutes } from "./routes/google-slides-mcp";
+import { googleDriveMcpRoutes } from "./routes/google-drive-mcp";
 import { gmailMcpRoutes } from "./routes/gmail-mcp";
 import { googleCalendarMcpRoutes } from "./routes/google-calendar-mcp";
 import { googleOAuthRoutes } from "./routes/google-oauth";
@@ -97,6 +99,7 @@ app.route("/mcp/image-generation", imageGenerationMcpRoutes);
 app.route("/mcp/google-docs", googleDocsMcpRoutes);
 app.route("/mcp/google-sheets", googleSheetsMcpRoutes);
 app.route("/mcp/google-slides", googleSlidesMcpRoutes);
+app.route("/mcp/google-drive", googleDriveMcpRoutes);
 app.route("/mcp/gmail", gmailMcpRoutes);
 app.route("/mcp/google-calendar", googleCalendarMcpRoutes);
 // OAuth Authorization Servers — mounted at provider-specific prefixes for clean separation

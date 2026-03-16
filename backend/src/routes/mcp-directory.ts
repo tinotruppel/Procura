@@ -87,6 +87,12 @@ export const MCP_SERVERS: McpServerEntry[] = [
         description: "Manage Google Slides presentations (slides, text, images, find & replace)",
     },
     {
+        name: "google-drive",
+        title: "Google Drive",
+        endpoint: "/mcp/google-drive",
+        description: "Manage Google Drive files and folders (list, upload, download, organize)",
+    },
+    {
         name: "gmail",
         title: "Gmail",
         endpoint: "/mcp/gmail",
