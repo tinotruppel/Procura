@@ -1203,15 +1203,25 @@ export function Settings({ onBack }: SettingsProps) {
                         {[...allTools].sort((a, b) => a.name.localeCompare(b.name)).map((tool) => {
                             // Check if tool is supported on current platform
                             const isSupported = !tool.supportedPlatforms || tool.supportedPlatforms.includes(platform.name);
-                            const unsupportedReason = !isSupported
+                            
+                            // Check Langfuse requirements for the prompt editor tool
+                            const isLangfusePromptEditor = tool.name === "langfuse_prompt_editor";
+                            const langfuseReady = langfuseConfig.enabled && !!langfuseConfig.publicKey && !!langfuseConfig.secretKey;
+                            const langfuseDisabled = isLangfusePromptEditor && !langfuseReady;
+                            
+                            const isToolDisabled = !isSupported || langfuseDisabled;
+                            
+                            const disableReason = !isSupported
                                 ? `This tool is only available in the Chrome extension (requires ${tool.supportedPlatforms?.join(', ')} APIs)`
-                                : undefined;
+                                : langfuseDisabled
+                                    ? "This tool requires Langfuse Integration to be fully configured and enabled above."
+                                    : undefined;
 
                             return (
                                 <div
                                     key={tool.name}
-                                    className={`rounded-lg border bg-background overflow-hidden ${!isSupported ? 'opacity-50' : ''}`}
-                                    title={unsupportedReason}
+                                    className={`rounded-lg border bg-background overflow-hidden ${isToolDisabled ? 'opacity-50' : ''}`}
+                                    title={disableReason}
                                 >
                                     <div className="flex items-center justify-between p-3">
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1224,6 +1234,9 @@ export function Settings({ onBack }: SettingsProps) {
                                                     {!isSupported && (
                                                         <span className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">Extension only</span>
                                                     )}
+                                                    {langfuseDisabled && (
+                                                        <span className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">Requires Config</span>
+                                                    )}
                                                 </div>
                                                 <div className="text-xs text-muted-foreground truncate" title={tool.description}>
                                                     {tool.description}
@@ -1231,7 +1244,7 @@ export function Settings({ onBack }: SettingsProps) {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
-                                            {hasSettings(tool.name) && isSupported && (
+                                            {hasSettings(tool.name) && !isToolDisabled && (
                                                 <button
                                                     onClick={() => toggleExpanded(tool.name)}
                                                     className="p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -1245,12 +1258,12 @@ export function Settings({ onBack }: SettingsProps) {
                                             )}
                                             <button
                                                 onClick={() => toggleTool(tool.name, !isToolEnabled(tool.name))}
-                                                disabled={!isSupported}
-                                                className={`relative w-11 h-6 rounded-full transition-colors ${isToolEnabled(tool.name) && isSupported ? "bg-primary" : "bg-muted"
-                                                    } ${!isSupported ? 'cursor-not-allowed' : ''}`}
+                                                disabled={isToolDisabled}
+                                                className={`relative w-11 h-6 rounded-full transition-colors ${isToolEnabled(tool.name) && !isToolDisabled ? "bg-primary" : "bg-muted"
+                                                    } ${isToolDisabled ? 'cursor-not-allowed' : ''}`}
                                             >
                                                 <span
-                                                    className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isToolEnabled(tool.name) && isSupported ? "translate-x-5" : "translate-x-0"
+                                                    className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isToolEnabled(tool.name) && !isToolDisabled ? "translate-x-5" : "translate-x-0"
                                                         }`}
                                                 />
                                             </button>

@@ -190,6 +190,50 @@ export async function fetchLangfusePrompt(
 }
 
 /**
+ * Update and publish a prompt in Langfuse
+ */
+export async function updateLangfusePrompt(
+    config: LangfuseConfig,
+    name: string,
+    prompt: string | Array<{ role: string; content: string }>,
+    type: "chat" | "text" = "chat",
+    tags: string[] = []
+): Promise<{ success: boolean; version?: number; error?: string }> {
+    if (!isConfigValid(config)) {
+        return { success: false, error: "Langfuse is not configured or enabled." };
+    }
+
+    const url = `${getApiUrl(config)}/prompts`;
+
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Authorization": createAuthHeader(config),
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                name,
+                prompt,
+                type,
+                tags,
+                labels: ["production"],
+            }),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => "Unknown error");
+            return { success: false, error: `Langfuse API error (${response.status}): ${errorText}` };
+        }
+
+        const data: LangfusePromptResponse = await response.json();
+        return { success: true, version: data.version };
+    } catch (e) {
+        return { success: false, error: e instanceof Error ? e.message : "Failed to update prompt" };
+    }
+}
+
+/**
  * Test Langfuse connection with given config
  */
 export async function testLangfuseConnection(config: LangfuseConfig): Promise<{ success: boolean; error?: string; promptCount?: number }> {

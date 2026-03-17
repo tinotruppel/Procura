@@ -9,6 +9,7 @@ import { memoryTool } from "./memory";
 import { readPageTool } from "./read-page";
 import { annotatePageTool, clickElementTool, typeTextTool, navigateToTool } from "./web-interaction";
 import { scheduleTool, cancelScheduleTool } from "./schedule";
+import { langfusePromptTool } from "./langfuse-prompt";
 
 /**
  * All registered tools
@@ -28,6 +29,7 @@ export const allTools: Tool[] = [
     navigateToTool,
     scheduleTool,
     cancelScheduleTool,
+    langfusePromptTool,
 ];
 
 /**
@@ -49,3 +51,4 @@ export { memoryTool } from "./memory";
 export { readPageTool } from "./read-page";
 export { annotatePageTool, clickElementTool, typeTextTool, navigateToTool } from "./web-interaction";
 export { scheduleTool, cancelScheduleTool } from "./schedule";
+export { langfusePromptTool } from "./langfuse-prompt";
