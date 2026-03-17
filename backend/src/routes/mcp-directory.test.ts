@@ -26,7 +26,7 @@ describe("MCP Directory", () => {
         expect(serverNames).toContain("tasks");
         expect(serverNames).toContain("weather");
         expect(serverNames).toContain("cv-database");
-        expect(serverNames).toContain("knowledge-base");
+        expect(serverNames).toContain("vector-store");
         expect(serverNames).toContain("document-media");
         expect(serverNames).toContain("github");
         expect(serverNames).toContain("image-generation");

@@ -45,10 +45,10 @@ export const MCP_SERVERS: McpServerEntry[] = [
         description: "Resume and candidate search with semantic vector matching",
     },
     {
-        name: "knowledge-base",
-        title: "Knowledge Base",
-        endpoint: "/mcp/knowledge-base",
-        description: "Semantic search over documents and knowledge articles",
+        name: "vector-store",
+        title: "Vector Store",
+        endpoint: "/mcp/vector-store",
+        description: "Semantic search, document archival, and vector database management.",
     },
     {
         name: "document-media",

@@ -66,7 +66,7 @@ src/
     ├── tasks-mcp.ts      # Trello-backed task management
     ├── weather-mcp.ts    # OpenWeatherMap integration
     ├── cv-database-mcp.ts       # Flowcase CV search
-    ├── knowledge-base-mcp.ts    # Qdrant semantic search
+    ├── vector-store-mcp.ts      # Qdrant semantic search / vector store
     ├── document-media-mcp.ts    # OCR & audio transcription
     ├── github-mcp.ts            # GitHub API (read + limited write)
     └── image-generation-mcp.ts  # Google Imagen AI
@@ -122,14 +122,15 @@ All MCP servers are accessible via SSE transport at their respective endpoints. 
 | `search_content` | Semantic search for skills, technologies, or experience |
 | `get_cv` | Get full CV details for a person |
 
-#### Knowledge Base (`/mcp/knowledge-base`) — Qdrant + OpenAI Embeddings
+#### Vector Store (`/mcp/vector-store`) — Qdrant + OpenAI Embeddings
 
 | Tool | Description |
 |------|-------------|
-| `list_collections` | List all Qdrant collections |
-| `search` | Semantic search with auto-generated embeddings |
-| `get_documents` | Retrieve specific documents by ID |
-| `archive` | Chunk and store documents with embeddings |
+| `list_collections` | View available collections |
+| `create_collection` | Create new vector collections automatically sized correctly |
+| `archive` | Chunk documents and store embeddings |
+| `search` | Semantic search with auto-embeddings |
+| `retrieve` | Fetch specific points |
 
 #### Document & Media (`/mcp/document-media`) — OpenAI Whisper + Vision
 

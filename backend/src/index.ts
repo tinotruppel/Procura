@@ -12,7 +12,8 @@
  *   GET    /mcp/tasks                 - Tasks MCP server (ticket management)
  *   GET    /mcp/weather               - Weather MCP server
  *   GET    /mcp/cv-database           - CV Database MCP server (resume search)
- *   GET    /mcp/knowledge-base        - Knowledge Base MCP server (semantic search)
+ *   GET    /mcp/vector-store          - Vector Store MCP server (semantic search)
+ *   POST   /mcp/vector-store          - Vector Store MCP server (SSE message endpoint)
  *   GET    /mcp/document-media        - Document/Media MCP server (OCR, transcription)
  *   GET    /mcp/github                - GitHub MCP server (read-only)
  *   GET    /mcp/image-generation      - Image Generation MCP server (Imagen AI)
@@ -36,7 +37,7 @@ import { mcpProxyRoutes } from "./routes/mcp-proxy";
 import { tasksMcpRoutes } from "./routes/tasks-mcp";
 import { weatherMcpRoutes } from "./routes/weather-mcp";
 import { cvDatabaseMcpRoutes } from "./routes/cv-database-mcp";
-import { knowledgeBaseMcpRoutes } from "./routes/knowledge-base-mcp";
+import { vectorStoreMcpRoutes } from "./routes/vector-store-mcp";
 import { documentMediaMcpRoutes } from "./routes/document-media-mcp";
 import { githubMcpRoutes } from "./routes/github-mcp";
 import { imageGenerationMcpRoutes } from "./routes/image-generation-mcp";
@@ -92,7 +93,7 @@ app.route("/mcp-directory", mcpDirectoryRoutes);
 app.route("/mcp/tasks", tasksMcpRoutes);
 app.route("/mcp/weather", weatherMcpRoutes);
 app.route("/mcp/cv-database", cvDatabaseMcpRoutes);
-app.route("/mcp/knowledge-base", knowledgeBaseMcpRoutes);
+app.route("/mcp/vector-store", vectorStoreMcpRoutes);
 app.route("/mcp/document-media", documentMediaMcpRoutes);
 app.route("/mcp/github", githubMcpRoutes);
 app.route("/mcp/image-generation", imageGenerationMcpRoutes);

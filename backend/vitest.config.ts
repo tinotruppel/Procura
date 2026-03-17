@@ -26,7 +26,7 @@ export default defineConfig({
                 "src/routes/google-slides-mcp.ts",
                 "src/routes/google-oauth.ts",
                 "src/routes/image-generation-mcp.ts",
-                "src/routes/knowledge-base-mcp.ts",
+                "src/routes/vector-store-mcp.ts",
                 "src/routes/tasks-mcp.ts",
                 "src/routes/weather-mcp.ts",
                 "src/routes/sync.ts",

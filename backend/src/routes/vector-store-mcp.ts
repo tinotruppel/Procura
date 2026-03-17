@@ -1,12 +1,13 @@
 /**
- * Knowledge Base MCP Server
+ * Vector Store MCP Server
  * Implements the Model Context Protocol for semantic search and document archival
  *
- * Endpoint: /mcp/knowledge-base
+ * Endpoint: /mcp/vector-store
  * Transport: Streamable HTTP via @hono/mcp
  *
  * Features:
- * - list_collections: List all knowledge collections
+ * - list_collections: List all collections
+ * - create_collection: Create a new collection
  * - search: Semantic search with auto-generated embeddings
  * - retrieve: Get documents by ID
  * - archive: Chunk and store documents with embeddings
@@ -202,7 +203,7 @@ async function resolveBaseAuth(): Promise<BaseAuth | null> {
 }
 
 const mcpServer = new McpServer({
-    name: "knowledge-base",
+    name: "vector-store",
     version: "1.0.0",
 });
 
@@ -210,7 +211,7 @@ const mcpServer = new McpServer({
 mcpServer.registerTool(
     "list_collections",
     {
-        description: "List all collections in the knowledge base",
+        description: "List all collections in the vector store",
     },
     async () => {
         const baseAuth = await resolveBaseAuth();
@@ -234,6 +235,60 @@ mcpServer.registerTool(
                 }, null, 2)
             }]
         };
+    }
+);
+
+// --- create_collection ---
+mcpServer.registerTool(
+    "create_collection",
+    {
+        description: "Create a new vector collection. Automatically sizes the vector dimension based on the configured embedding model.",
+        inputSchema: {
+            collection: z.string().describe("Name of the collection to create"),
+        },
+    },
+    async ({ collection }) => {
+        const baseAuth = await resolveBaseAuth();
+        if (!baseAuth) {
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify({ error: "QDRANT_URL and OPENAI_API_KEY not configured. Store them via vault or set as environment variables." }, null, 2) }],
+                isError: true
+            };
+        }
+        
+        // Determine vector size based on model
+        let vectorSize = 1536; // default for text-embedding-3-small and text-embedding-ada-002
+        if (baseAuth.embeddingModel === "text-embedding-3-large") {
+            vectorSize = 3072;
+        }
+
+        try {
+            await qdrantRequest(
+                baseAuth.url, `/collections/${collection}`, "PUT", getQdrantApiKey(),
+                {
+                    vectors: {
+                        size: vectorSize,
+                        distance: "Cosine"
+                    }
+                }
+            );
+            return {
+                content: [{
+                    type: "text" as const,
+                    text: JSON.stringify({
+                        message: `Successfully created collection '${collection}'`,
+                        vectorSize,
+                        distance: "Cosine",
+                        model: baseAuth.embeddingModel
+                    }, null, 2)
+                }]
+            };
+        } catch (error) {
+            return {
+                content: [{ type: "text" as const, text: JSON.stringify({ error: error instanceof Error ? error.message : "Failed to create collection" }, null, 2) }],
+                isError: true
+            };
+        }
     }
 );
 
@@ -484,11 +539,11 @@ mcpServer.registerTool(
 // HTTP Routes
 // =============================================================================
 
-export const knowledgeBaseMcpRoutes = new Hono();
+export const vectorStoreMcpRoutes = new Hono();
 
 const transport = new StreamableHTTPTransport();
 
-knowledgeBaseMcpRoutes.all("/", async (c) => {
+vectorStoreMcpRoutes.all("/", async (c) => {
     currentRequestApiKey = c.req.header("X-API-Key") || undefined;
 
     try {
@@ -503,21 +558,21 @@ knowledgeBaseMcpRoutes.all("/", async (c) => {
 
         return qdrantKeyStore.run(mappedQdrantKey, () => transport.handleRequest(c));
     } catch (e) {
-        console.error("[knowledge-base-mcp] Error handling request:", e);
+        console.error("[vector-store-mcp] Error handling request:", e);
         return c.json({ error: "Internal server error" }, 500);
     }
 });
 
-knowledgeBaseMcpRoutes.get("/info", async (c) => {
+vectorStoreMcpRoutes.get("/info", async (c) => {
     currentRequestApiKey = c.req.header("X-API-Key") || undefined;
     const baseAuth = await resolveBaseAuth();
     return c.json({
-        name: "knowledge-base",
+        name: "vector-store",
         version: "1.0.0",
         description: "Semantic search and document archival",
         status: baseAuth ? "ready" : "not_configured",
         configured: !!baseAuth,
-        tools: ["list_collections", "search", "retrieve", "archive"],
+        tools: ["list_collections", "create_collection", "search", "retrieve", "archive"],
         embeddingModel: baseAuth?.embeddingModel,
         note: baseAuth ? undefined : "Store QDRANT_URL and OPENAI_API_KEY in vault or set as environment variables"
     });
