@@ -80,9 +80,11 @@ export const langfusePromptTool: Tool = {
                 let promptType: "chat" | "text" = "chat";
                 let existingTags: string[] = [];
                 try {
+                    const baseHost = config.host.endsWith("/") ? config.host.slice(0, -1) : config.host;
+                    const authHeader = `Basic ${btoa(`${config.publicKey}:${config.secretKey}`)}`;
                     const raw = await fetch(
-                        `${config.host.replace(/\/+$/, "")}/api/public/v2/prompts/${encodeURIComponent(promptName)}?label=production`,
-                        { headers: { "Authorization": `Basic ${btoa(`${config.publicKey}:${config.secretKey}`)}` } }
+                        `${baseHost}/api/public/v2/prompts/${encodeURIComponent(promptName)}?label=production`,
+                        { headers: { "Authorization": authHeader } }
                     );
                     if (raw.ok) {
                         const data = await raw.json();

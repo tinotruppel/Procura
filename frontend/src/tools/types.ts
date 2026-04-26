@@ -16,6 +16,10 @@ export interface ToolExecutionResult {
     success: boolean;
     data?: unknown;
     error?: string;
+    /** Set when MCP tool requires OAuth login before execution */
+    authRequired?: boolean;
+    /** MCP server ID that requires authentication */
+    serverId?: string;
 }
 
 /**

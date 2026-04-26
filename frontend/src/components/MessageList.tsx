@@ -1,6 +1,6 @@
 import { ChatMessage, ToolCallInfo, LLMDebugInfo, PROVIDER_LABELS } from "@/lib/llm-types";
 import { cn } from "@/lib/utils";
-import { Calculator, Camera, Globe, MapPin, Server, CheckCircle, XCircle, ChevronDown, ChevronRight, Clock, Copy, Check, Sparkles, ThumbsUp, ThumbsDown, X, Send, GitBranch } from "lucide-react";
+import { Calculator, Camera, Globe, MapPin, Server, CheckCircle, XCircle, ChevronDown, ChevronRight, Clock, Copy, Check, Sparkles, ThumbsUp, ThumbsDown, X, Send, GitBranch, LogIn } from "lucide-react";
 import React, { useState, useRef, useEffect, useMemo, memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -90,6 +90,8 @@ interface MessageListProps {
     langfuseConfig?: LangfuseConfig;
     isStreaming?: boolean;
     onFork?: (messageIndex: number) => void;
+    /** Callback to trigger OAuth login for an MCP server */
+    onMcpLogin?: (serverId: string) => void;
 }
 
 // Simple hash function for stable keys
@@ -491,11 +493,13 @@ function formatBytes(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
+function ToolCallDisplay({ toolCall, onMcpLogin }: { toolCall: ToolCallInfo; onMcpLogin?: (serverId: string) => void }) {
     const [expanded, setExpanded] = useState(false);
     const icon = getToolIcon(toolCall.name);
     const displayName = getDisplayToolName(toolCall.name);
     const success = toolCall.result?.success;
+    const authRequired = toolCall.result?.authRequired;
+    const authServerId = toolCall.result?.serverId;
 
     // Format JSON nicely for display
     const formatData = (data: unknown) => {
@@ -524,13 +528,11 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
                 <span className="text-muted-foreground/70 truncate flex-1 text-left">
                     {JSON.stringify(toolCall.args)}
                 </span>
-                {toolCall.result && (
-                    success ? (
-                        <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
-                    ) : (
-                        <XCircle className="h-3 w-3 text-red-600 dark:text-red-400" />
-                    )
-                )}
+                {toolCall.result && (() => {
+                    if (authRequired) return <LogIn className="h-3 w-3 text-amber-600 dark:text-amber-400" />;
+                    if (success) return <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />;
+                    return <XCircle className="h-3 w-3 text-red-600 dark:text-red-400" />;
+                })()}
             </button>
 
             {/* Expanded content */}
@@ -544,23 +546,44 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCallInfo }) {
                     </div>
                     {toolCall.result && (
                         <div>
-                            <div className={cn(
-                                "font-medium mb-1 flex items-center gap-2",
-                                success ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-                            )}>
-                                {success ? "Result:" : "Error:"}
-                                {toolCall.durationMs !== undefined && (
-                                    <span className="text-muted-foreground font-normal text-[10px]">
-                                        ({toolCall.durationMs}ms)
-                                    </span>
-                                )}
-                            </div>
-                            <pre className="bg-background p-2 rounded text-[10px] overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
-                                {success
-                                    ? formatData(toolCall.result.data)
-                                    : toolCall.result.error
-                                }
-                            </pre>
+                            {authRequired ? (
+                                <div className="space-y-2">
+                                    <div className="font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                                        <LogIn className="h-3 w-3" />
+                                        Authentication Required
+                                    </div>
+                                    <p className="text-muted-foreground">This tool requires OAuth login before it can be used.</p>
+                                    {onMcpLogin && authServerId && (
+                                        <button
+                                            onClick={() => onMcpLogin(authServerId)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+                                        >
+                                            <LogIn className="h-3 w-3" />
+                                            Log in
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <>
+                                    <div className={cn(
+                                        "font-medium mb-1 flex items-center gap-2",
+                                        success ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                                    )}>
+                                        {success ? "Result:" : "Error:"}
+                                        {toolCall.durationMs !== undefined && (
+                                            <span className="text-muted-foreground font-normal text-[10px]">
+                                                ({toolCall.durationMs}ms)
+                                            </span>
+                                        )}
+                                    </div>
+                                    <pre className="bg-background p-2 rounded text-[10px] overflow-x-auto whitespace-pre-wrap break-all max-h-96 overflow-y-auto">
+                                        {success
+                                            ? formatData(toolCall.result.data)
+                                            : toolCall.result.error
+                                        }
+                                    </pre>
+                                </>
+                            )}
                         </div>
                     )}
                     {toolCall.observationId && (
@@ -865,7 +888,7 @@ function ModelMessage({ content, traceId, langfuseConfig, isStreaming, onFork, t
     );
 }
 
-export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, isStreaming, onFork }: MessageListProps) {
+export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, isStreaming, onFork, onMcpLogin }: MessageListProps) {
     if (messages.length === 0) {
         return (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm p-4">
@@ -892,7 +915,7 @@ export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, is
                         <div className="w-full max-w-[85%] space-y-1">
                             {message.debugEvents.map((event, eventIndex) => (
                                 event.type === 'tool' ? (
-                                    <ToolCallDisplay key={eventIndex} toolCall={event.info} />
+                                    <ToolCallDisplay key={eventIndex} toolCall={event.info} onMcpLogin={onMcpLogin} />
                                 ) : (
                                     <LLMDebugDisplay key={eventIndex} debug={event.info} />
                                 )
@@ -900,7 +923,8 @@ export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, is
                         </div>
                     )}
 
-                    {/* Message content */}
+                    {/* Message content — skip empty model messages (e.g. auth-only messages after login) */}
+                    {(message.role === "user" || message.content) && (
                     <div
                         className={cn(
                             "max-w-[85%] rounded-lg px-4 py-2 text-sm overflow-hidden",
@@ -956,6 +980,26 @@ export function MessageList({ messages, scrollRef, debugMode, langfuseConfig, is
                             />
                         )}
                     </div>
+                    )}
+
+                    {/* Auth-required login card — always visible, independent of debug mode */}
+                    {message.role === "model" && message.authRequired && onMcpLogin && (
+                        <div className="w-full max-w-[85%] mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 min-w-0">
+                                    <LogIn className="h-4 w-4 shrink-0" />
+                                    <span className="text-sm font-medium truncate">Login required to use this tool</span>
+                                </div>
+                                <button
+                                    onClick={() => onMcpLogin(message.authRequired!.serverId)}
+                                    className="shrink-0 inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors"
+                                >
+                                    <LogIn className="h-3.5 w-3.5" />
+                                    Log in
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ))}
             <div ref={scrollRef} />

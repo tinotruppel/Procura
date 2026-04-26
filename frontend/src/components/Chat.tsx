@@ -9,7 +9,7 @@ import { useChatDraft } from "@/hooks/useChatDraft";
 import { useChatSessions } from "@/hooks/useChatSessions";
 import { useDuplicateChatWarning } from "@/hooks/useDuplicateChatWarning";
 import { useLangfuseTracing } from "@/hooks/useLangfuseTracing";
-import { ChatMessage, DebugEvent, LLMProvider } from "@/lib/llm-types";
+import { ChatMessage, DebugEvent, LLMProvider, ToolCallInfo } from "@/lib/llm-types";
 import {
     getProvider,
     getApiKeyForProvider,
@@ -21,11 +21,13 @@ import {
     updateChatTitleById,
 } from "@/lib/storage";
 import { initializeMcpServers } from "@/lib/mcp-client";
+import { loginMcpServer } from "@/lib/mcp-login";
 import { prepareMessagesWithAttachments } from "@/lib/chat/attachments";
 import { resolveSystemPrompt } from "@/lib/chat/prompt-resolver";
 import { executeLlmChatTurn } from "@/lib/chat/llm-flow";
 import { exportChatAsMarkdown } from "@/lib/chat/export";
 import { setToolContext } from "@/lib/tool-context";
+import { executeTool } from "@/tools/registry";
 import {
     Select,
     SelectContent,
@@ -411,11 +413,18 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
                 },
             });
 
+            // Find the tool call that triggered auth-required (for re-execution after login)
+            const authToolCall = response.authRequired
+                ? response.toolCalls.find(tc => tc.result?.authRequired)
+                : undefined;
+
             const assistantMessage: ChatMessage = {
-                role: "model", content: response.text,
+                role: "model", content: response.text || "",
                 toolCalls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
                 llmDebug: response.debug, debugEvents: response.debugEvents,
                 traceId, timestamp: Date.now(),
+                authRequired: response.authRequired,
+                pendingToolCall: authToolCall ? { name: authToolCall.name, args: authToolCall.args } : undefined,
             };
             // Use current messages (includes any interventions inserted mid-loop),
             // replacing the pending model placeholder with the final assistant message
@@ -546,11 +555,17 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
                 signal: abortControllerRef.current?.signal, customBaseUrl,
             });
 
+            const authToolCall2 = response.authRequired
+                ? response.toolCalls.find(tc => tc.result?.authRequired)
+                : undefined;
+
             const assistantMessage: ChatMessage = {
-                role: "model", content: response.text,
+                role: "model", content: response.text || "",
                 toolCalls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
                 llmDebug: response.debug, debugEvents: response.debugEvents,
                 traceId, timestamp: Date.now(),
+                authRequired: response.authRequired,
+                pendingToolCall: authToolCall2 ? { name: authToolCall2.name, args: authToolCall2.args } : undefined,
             };
 
             sessions.setMessages(prev => {
@@ -732,6 +747,64 @@ export function Chat({ onOpenSettings, deepLinkParams, initialInput, sharedFiles
             ) : (
                 <ErrorBoundary onExportChat={() => exportChatAsMarkdown(sessions.messages, sessions.chatTitle || "Untitled Chat")} onNewThread={async () => { await createNewChat(); window.location.reload(); }}>
                     <MessageList messages={sessions.messages} scrollRef={messagesEndRef} debugMode={debugMode} langfuseConfig={tracing.langfuseConfig} isStreaming={isLoading}
+                        onMcpLogin={async (serverId: string) => {
+                            try {
+                                const success = await loginMcpServer(serverId);
+                                if (!success) { setError("Login failed. Please try again or check Settings."); return; }
+
+                                // Find the last message with a pending tool call for this server
+                                const msgs = sessions.messagesRef.current;
+                                const authMsg = [...msgs].reverse().find(
+                                    m => m.authRequired?.serverId === serverId && m.pendingToolCall
+                                );
+
+                                if (authMsg?.pendingToolCall) {
+                                    console.log(`[Chat] Re-executing tool ${authMsg.pendingToolCall.name} after login`);
+                                    const startTime = Date.now();
+                                    const toolResult = await executeTool(authMsg.pendingToolCall.name, authMsg.pendingToolCall.args);
+                                    const durationMs = Date.now() - startTime;
+
+                                    // Build a proper ToolCallInfo (same format as all other tool calls)
+                                    const toolCallInfo: ToolCallInfo = {
+                                        name: authMsg.pendingToolCall.name,
+                                        args: authMsg.pendingToolCall.args,
+                                        durationMs,
+                                        result: {
+                                            success: toolResult.success,
+                                            data: toolResult.data,
+                                            error: toolResult.error,
+                                        },
+                                    };
+                                    const debugEvent: DebugEvent = { type: "tool", info: toolCallInfo };
+
+                                    // Update the existing auth message in-place: clear auth flags, add tool result
+                                    authMsg.authRequired = undefined;
+                                    authMsg.pendingToolCall = undefined;
+                                    // Replace the failed auth tool call with the successful one
+                                    const existingCalls = authMsg.toolCalls || [];
+                                    const authIdx = existingCalls.findIndex(tc => tc.result?.authRequired);
+                                    if (authIdx !== -1) {
+                                        existingCalls[authIdx] = toolCallInfo;
+                                    } else {
+                                        existingCalls.push(toolCallInfo);
+                                    }
+                                    authMsg.toolCalls = existingCalls;
+                                    authMsg.debugEvents = [...(authMsg.debugEvents || []), debugEvent];
+
+                                    // Force re-render with updated message
+                                    sessions.setMessages(prev => [...prev]);
+
+                                    // Trigger LLM to continue with the tool result
+                                    setTimeout(() => {
+                                        if (triggerLLMContinuationRef.current) {
+                                            triggerLLMContinuationRef.current();
+                                        }
+                                    }, 100);
+                                }
+                            } catch (err) {
+                                setError(err instanceof Error ? err.message : "Login failed");
+                            }
+                        }}
                         onFork={async (messageIndex: number) => {
                             try { await forkConversation(sessions.messages, messageIndex, sessions.chatTitle, sessions.selectedPromptId); window.location.reload(); }
                             catch (err) { console.error("[Chat] Fork failed:", err); setError("Failed to fork conversation"); }

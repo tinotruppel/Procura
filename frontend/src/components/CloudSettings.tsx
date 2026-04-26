@@ -92,8 +92,8 @@ async function addCloudServers(
     entries: McpDirectoryEntry[],
 ): Promise<void> {
     const existing = await getMcpServers();
-    // Remove old cloud servers
-    const manual = existing.filter((s) => s.source !== "cloud");
+    // Remove old cloud servers (by source field AND by "cloud-" ID prefix for legacy entries)
+    const manual = existing.filter((s) => s.source !== "cloud" && !s.id.startsWith("cloud-"));
 
     const cleanBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     const cloudServers: StoredMcpServer[] = entries.map((entry) => ({
@@ -110,7 +110,7 @@ async function addCloudServers(
 
 async function removeCloudServers(): Promise<void> {
     const existing = await getMcpServers();
-    const manual = existing.filter((s) => s.source !== "cloud");
+    const manual = existing.filter((s) => s.source !== "cloud" && !s.id.startsWith("cloud-"));
     await setMcpServers(manual);
 }
 

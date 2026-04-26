@@ -1211,11 +1211,11 @@ export function Settings({ onBack }: SettingsProps) {
                             
                             const isToolDisabled = !isSupported || langfuseDisabled;
                             
-                            const disableReason = !isSupported
-                                ? `This tool is only available in the Chrome extension (requires ${tool.supportedPlatforms?.join(', ')} APIs)`
-                                : langfuseDisabled
-                                    ? "This tool requires Langfuse Integration to be fully configured and enabled above."
-                                    : undefined;
+                            const disableReason = (() => {
+                                if (!isSupported) return `This tool is only available in the Chrome extension (requires ${tool.supportedPlatforms?.join(', ')} APIs)`;
+                                if (langfuseDisabled) return "This tool requires Langfuse Integration to be fully configured and enabled above.";
+                                return undefined;
+                            })();
 
                             return (
                                 <div

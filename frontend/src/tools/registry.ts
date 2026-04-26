@@ -6,7 +6,8 @@ import { McpServer, McpTool } from "@/lib/mcp-types";
 import {
     callTool as mcpCallTool,
     mcpToolToFunctionDeclaration,
-    parseMcpToolName
+    parseMcpToolName,
+    AuthRequiredError,
 } from "@/lib/mcp-client";
 
 // ============================================================================
@@ -17,6 +18,12 @@ import {
 interface ConnectedMcpServer {
     server: McpServer;
     tools: McpTool[];
+    /** OAuth metadata cached from last AuthRequiredError (for login flow) */
+    authMetadata?: {
+        resourceMetadataUrl?: string;
+        scope?: string;
+        useDirectAuthServer?: boolean;
+    };
 }
 
 let connectedServers: ConnectedMcpServer[] = [];
@@ -51,6 +58,18 @@ function findServerByIdPrefix(sanitizedId: string): ConnectedMcpServer | undefin
     return connectedServers.find(
         (s) => s.server.id.replace(/-/g, "_") === sanitizedId
     );
+}
+
+/**
+ * Get cached auth metadata for a server (populated when tools/call returns 401)
+ */
+export function getAuthMetadata(serverId: string): {
+    resourceMetadataUrl?: string;
+    scope?: string;
+    useDirectAuthServer?: boolean;
+} | undefined {
+    const entry = connectedServers.find((s) => s.server.id === serverId);
+    return entry?.authMetadata;
 }
 
 // ============================================================================
@@ -258,6 +277,23 @@ async function executeMcpTool(
             data: textParts.join('\n') || result.content,
         };
     } catch (error) {
+        // Check for auth-required error (lazy auth)
+        if (error instanceof AuthRequiredError) {
+            // Cache auth metadata for the login flow
+            if (connected) {
+                connected.authMetadata = {
+                    resourceMetadataUrl: error.resourceMetadataUrl,
+                    scope: error.scope,
+                    useDirectAuthServer: error.useDirectAuthServer,
+                };
+            }
+            return {
+                success: false,
+                error: "Authentication required. Please log in to use this tool.",
+                authRequired: true,
+                serverId: connected.server.id,
+            };
+        }
         return {
             success: false,
             error: error instanceof Error ? error.message : "MCP tool execution failed",

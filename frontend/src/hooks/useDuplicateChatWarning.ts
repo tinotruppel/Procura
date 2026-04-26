@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 const CHANNEL_NAME = "procura-active-chat";
-const INSTANCE_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const INSTANCE_ID = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 
 interface ChatPresenceMessage {
     type: "announce" | "query";

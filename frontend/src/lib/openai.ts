@@ -229,6 +229,7 @@ export async function sendMessageOpenAI(
     const debugEvents: DebugEvent[] = [];
 
     let continueLoop = true;
+    let authRequiredInfo: { serverId: string } | undefined;
     const currentMessages = [...messagesWithSystem];
     let finalContent = "";
 
@@ -285,6 +286,7 @@ export async function sendMessageOpenAI(
                 tool_calls: toolCalls,
             });
 
+
             // Process each tool call
             for (const toolCall of toolCalls) {
                 let args: Record<string, unknown> = {};
@@ -310,6 +312,10 @@ export async function sendMessageOpenAI(
                 debugEvents.push(toolEvent);
                 onDebugEvent?.(toolEvent);
 
+                if (toolResult.authRequired && toolResult.serverId) {
+                    authRequiredInfo = { serverId: toolResult.serverId };
+                }
+
                 // Add tool result message
                 currentMessages.push({
                     role: "tool",
@@ -324,6 +330,12 @@ export async function sendMessageOpenAI(
             const intervention = getIntervention?.();
             if (intervention) {
                 currentMessages.push({ role: "user", content: `[User intervention]: ${intervention}` });
+            }
+
+            // If auth was required, break immediately — don't call LLM again
+            if (authRequiredInfo) {
+                continueLoop = false;
+                finalContent = "";
             }
 
             // Continue loop to get final response
@@ -342,5 +354,6 @@ export async function sendMessageOpenAI(
         toolCalls: allToolCalls,
         debug: lastLLMDebug,
         debugEvents,
+        authRequired: authRequiredInfo,
     };
 }

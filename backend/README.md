@@ -1,6 +1,6 @@
 # Procura Backend
 
-TypeScript/Hono backend providing the Procura sync API, MCP proxy, and **7 cloud MCP tool servers**.
+TypeScript/Hono backend providing the Procura sync API, MCP proxy, and **13 cloud MCP tool servers**.
 
 ## Requirements
 

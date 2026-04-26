@@ -283,11 +283,39 @@ describe("Google OAuth Authorization Server", () => {
     // MCP Endpoints — 401 without session
     // =========================================================================
 
-    describe("Google MCP endpoints without auth", () => {
-        it("POST /mcp/google-docs should return 401 without Bearer token", async () => {
+    describe("Google MCP endpoints — lazy auth", () => {
+        it("POST /mcp/google-docs initialize should NOT return 401 (lazy auth)", async () => {
             const res = await app.request("/mcp/google-docs", {
                 method: "POST",
                 body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+                headers: { "Content-Type": "application/json" },
+            });
+            // Discovery methods bypass OAuth — may return 200/500 but NOT 401
+            expect(res.status).not.toBe(401);
+        });
+
+        it("POST /mcp/google-sheets initialize should NOT return 401 (lazy auth)", async () => {
+            const res = await app.request("/mcp/google-sheets", {
+                method: "POST",
+                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+                headers: { "Content-Type": "application/json" },
+            });
+            expect(res.status).not.toBe(401);
+        });
+
+        it("POST /mcp/google-slides initialize should NOT return 401 (lazy auth)", async () => {
+            const res = await app.request("/mcp/google-slides", {
+                method: "POST",
+                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+                headers: { "Content-Type": "application/json" },
+            });
+            expect(res.status).not.toBe(401);
+        });
+
+        it("POST /mcp/google-docs tools/call should return 401 without Bearer token", async () => {
+            const res = await app.request("/mcp/google-docs", {
+                method: "POST",
+                body: JSON.stringify({ jsonrpc: "2.0", method: "tools/call", id: 1, params: { name: "list_documents" } }),
                 headers: { "Content-Type": "application/json" },
             });
             expect(res.status).toBe(401);
@@ -296,28 +324,10 @@ describe("Google OAuth Authorization Server", () => {
             expect(body.error).toContain("authentication");
         });
 
-        it("POST /mcp/google-sheets should return 401 without Bearer token", async () => {
-            const res = await app.request("/mcp/google-sheets", {
-                method: "POST",
-                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
-                headers: { "Content-Type": "application/json" },
-            });
-            expect(res.status).toBe(401);
-        });
-
-        it("POST /mcp/google-slides should return 401 without Bearer token", async () => {
-            const res = await app.request("/mcp/google-slides", {
-                method: "POST",
-                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
-                headers: { "Content-Type": "application/json" },
-            });
-            expect(res.status).toBe(401);
-        });
-
-        it("should return 401 with invalid Bearer token", async () => {
+        it("POST /mcp/google-docs tools/call should return 401 with invalid Bearer token", async () => {
             const res = await app.request("/mcp/google-docs", {
                 method: "POST",
-                body: JSON.stringify({ jsonrpc: "2.0", method: "initialize", id: 1 }),
+                body: JSON.stringify({ jsonrpc: "2.0", method: "tools/call", id: 1, params: { name: "list_documents" } }),
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": "Bearer invalid-token",

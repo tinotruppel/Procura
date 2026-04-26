@@ -10,20 +10,24 @@ vi.mock("@/lib/storage", () => ({
 }));
 
 // Mock mcp-client
-vi.mock("@/lib/mcp-client", () => ({
-    callTool: vi.fn(),
-    mcpToolToFunctionDeclaration: vi.fn((tool, id) => ({
-        name: `mcp__${id.replace(/-/g, "_")}__${tool.name}`,
-        description: tool.description,
-    })),
-    parseMcpToolName: vi.fn((name: string) => {
-        if (!name.startsWith("mcp__")) return null;
-        const rest = name.slice(5);
-        const idx = rest.indexOf("__");
-        if (idx <= 0) return null;
-        return { serverId: rest.slice(0, idx), toolName: rest.slice(idx + 2) };
-    }),
-}));
+vi.mock("@/lib/mcp-client", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@/lib/mcp-client")>();
+    return {
+        callTool: vi.fn(),
+        mcpToolToFunctionDeclaration: vi.fn((tool, id) => ({
+            name: `mcp__${id.replace(/-/g, "_")}__${tool.name}`,
+            description: tool.description,
+        })),
+        parseMcpToolName: vi.fn((name: string) => {
+            if (!name.startsWith("mcp__")) return null;
+            const rest = name.slice(5);
+            const idx = rest.indexOf("__");
+            if (idx <= 0) return null;
+            return { serverId: rest.slice(0, idx), toolName: rest.slice(idx + 2) };
+        }),
+        AuthRequiredError: actual.AuthRequiredError,
+    };
+});
 
 import {
     registerMcpServer,
@@ -32,9 +36,10 @@ import {
     getToolsWithConfig,
     getEnabledToolDeclarations,
     executeTool,
+    getAuthMetadata,
 } from "./registry";
 import { getToolConfigs, isMcpToolEnabled } from "@/lib/storage";
-import { callTool } from "@/lib/mcp-client";
+import { callTool, AuthRequiredError } from "@/lib/mcp-client";
 
 describe("registry", () => {
     beforeEach(() => {
@@ -279,6 +284,46 @@ describe("registry", () => {
             expect(result.success).toBe(true);
             // When no text content, returns the original content array
             expect(result.data).toEqual([{ type: "blob", data: "binary" }]);
+        });
+
+        it("should return authRequired when AuthRequiredError is thrown", async () => {
+            const server = { id: "mcpauth-001", name: "Google Docs", url: "http://mcp" };
+            registerMcpServer(server as any, [{ name: "list_documents" }] as any);
+
+            (isMcpToolEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+            const authError = new AuthRequiredError("Authentication required");
+            authError.resourceMetadataUrl = "http://mcp/.well-known/oauth-protected-resource";
+            authError.scope = "docs.read";
+            (callTool as ReturnType<typeof vi.fn>).mockRejectedValue(authError);
+
+            const result = await executeTool("mcp__mcpauth_001__list_documents", {});
+
+            expect(result.success).toBe(false);
+            expect(result.authRequired).toBe(true);
+            expect(result.serverId).toBe("mcpauth-001");
+            expect(result.error).toContain("Authentication required");
+        });
+
+        it("should cache auth metadata when AuthRequiredError is thrown", async () => {
+            const server = { id: "mcpauth-002", name: "Gmail", url: "http://mcp" };
+            registerMcpServer(server as any, [{ name: "send_email" }] as any);
+
+            (isMcpToolEnabled as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+            const authError = new AuthRequiredError("Auth needed");
+            authError.resourceMetadataUrl = "http://mcp/.well-known/oauth-protected-resource";
+            authError.scope = "gmail.send";
+            authError.useDirectAuthServer = true;
+            (callTool as ReturnType<typeof vi.fn>).mockRejectedValue(authError);
+
+            await executeTool("mcp__mcpauth_002__send_email", {});
+
+            const meta = getAuthMetadata("mcpauth-002");
+            expect(meta).toBeDefined();
+            expect(meta?.resourceMetadataUrl).toBe("http://mcp/.well-known/oauth-protected-resource");
+            expect(meta?.scope).toBe("gmail.send");
+            expect(meta?.useDirectAuthServer).toBe(true);
         });
     });
 });

@@ -140,12 +140,14 @@ export async function sendMessageGemini(
     onDebugEvent?.(firstEvent);
 
     // Handle function calls in a loop
+    let authRequiredInfo: { serverId: string } | undefined;
     while (functionCalls.length > 0) {
         // Check for abort signal before processing tool calls
         if (signal?.aborted) {
             throw new DOMException("Aborted", "AbortError");
         }
         const functionResponses: Part[] = [];
+        let authHit = false;
 
         for (const fc of functionCalls) {
             const toolCall: ToolCallInfo = {
@@ -165,6 +167,12 @@ export async function sendMessageGemini(
             debugEvents.push(toolEvent);
             onDebugEvent?.(toolEvent);
 
+            // Detect auth-required — still feed error to LLM for a user-facing message
+            if (toolResult.authRequired && toolResult.serverId) {
+                authHit = true;
+                authRequiredInfo = { serverId: toolResult.serverId };
+            }
+
             // Prepare response for Gemini
             functionResponses.push({
                 functionResponse: {
@@ -174,6 +182,12 @@ export async function sendMessageGemini(
                         : { error: toolResult.error },
                 },
             });
+        }
+
+        // If auth was required, break immediately — don't send results back to LLM
+        if (authHit) {
+            accumulatedText = "";
+            break;
         }
 
         // Inject user intervention if one is pending
@@ -227,6 +241,7 @@ export async function sendMessageGemini(
         toolCalls: allToolCalls,
         debug: lastLLMDebug,
         debugEvents,
+        authRequired: authRequiredInfo,
     };
 }
 

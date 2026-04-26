@@ -308,7 +308,8 @@ async function startOAuthFlow(
         params.set("scope", scopes);
     }
 
-    const authUrl = `${authMetadata.authorization_endpoint}?${params.toString()}${apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : ""}`;
+    const apiKeySuffix = apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : "";
+    const authUrl = `${authMetadata.authorization_endpoint}?${params.toString()}${apiKeySuffix}`;
     console.log("[OAuth] Auth URL:", authUrl);
     return authUrl;
 }

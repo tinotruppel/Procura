@@ -17,6 +17,7 @@ import {
     isTrelloConfiguredAsync,
     isValidSession,
 } from "../lib/trello-auth";
+import { getMcpMethod, isDiscoveryMethod } from "../lib/mcp-lazy-auth";
 
 const TRELLO_API_BASE = "https://api.trello.com/1";
 
@@ -611,12 +612,16 @@ tasksMcpRoutes.all("/", async (c) => {
         return c.json({ error: "Tasks MCP server not configured. Store TRELLO_APP_KEY in vault or set as environment variable." }, 503);
     }
 
+    // Allow tool discovery without OAuth session (lazy auth)
+    const method = await getMcpMethod(c.req);
+    const discovery = isDiscoveryMethod(method);
+
     // Extract session token from Authorization header
     const authHeader = c.req.header("Authorization") || "";
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
-    // Require valid session token — return 401 so frontend shows Login button
-    if (!sessionToken || !(await isValidSession(sessionToken))) {
+    // Require valid session token for non-discovery requests
+    if (!discovery && (!sessionToken || !(await isValidSession(sessionToken)))) {
         const url = new URL(c.req.url);
         const proto = c.req.header("X-Forwarded-Proto") || url.protocol.replace(":", "");
         const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
@@ -630,6 +635,8 @@ tasksMcpRoutes.all("/", async (c) => {
         await mcpServer.connect(transport);
     }
 
+    // Discovery requests don't need a session context
+    if (discovery) return transport.handleRequest(c);
     return sessionStore.run({ session: sessionToken, apiKey: currentRequestApiKey! }, () => transport.handleRequest(c));
 });
 

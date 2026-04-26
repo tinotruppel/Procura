@@ -19,6 +19,7 @@ import {
     buildGoogleWwwAuthenticate,
     buildGoogleResourceMetadata,
 } from "../lib/google-auth";
+import { getMcpMethod, isDiscoveryMethod } from "../lib/mcp-lazy-auth";
 
 // =============================================================================
 // Session context
@@ -280,15 +281,22 @@ googleDriveMcpRoutes.all("/", async (c) => {
 
     if (!configured) return c.json({ error: "Google OAuth not configured. Store GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in vault or set as environment variables." }, 503);
 
+    // Allow tool discovery without OAuth session (lazy auth)
+    const method = await getMcpMethod(c.req);
+    const discovery = isDiscoveryMethod(method);
+
     const authHeader = c.req.header("Authorization") || "";
     const sessionToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
-    if (!sessionToken || !(await isValidSession(sessionToken))) {
+    if (!discovery && (!sessionToken || !(await isValidSession(sessionToken)))) {
         c.header("WWW-Authenticate", buildGoogleWwwAuthenticate(c, "/mcp/google-drive"));
         return c.json({ error: "Google authentication required" }, 401);
     }
 
     if (!mcpServer.isConnected()) await mcpServer.connect(transport);
+
+    // Discovery requests don't need a session context
+    if (discovery) return transport.handleRequest(c);
     return sessionStore.run({ session: sessionToken, apiKey: apiKey! }, () => transport.handleRequest(c));
 });
 

@@ -28,7 +28,7 @@ export async function readEncryptedOrFallback<T>(
     try {
         return await decryptWithVault<T>(encrypted);
     } catch (e) {
-        console.warn(`[vault] Failed to decrypt ${encryptedKey}, returning fallback:`, e);
+        console.warn("[vault] Failed to decrypt", encryptedKey, "returning fallback:", e);
         return lockedFallback ?? fallback;
     }
 }

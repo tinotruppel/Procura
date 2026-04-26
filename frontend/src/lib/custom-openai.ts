@@ -267,6 +267,7 @@ export async function sendMessageCustomOpenAI(
     const debugEvents: DebugEvent[] = [];
 
     let continueLoop = true;
+    let authRequiredInfo: { serverId: string } | undefined;
     const currentMessages = [...messagesWithSystem];
     let finalContent = "";
 
@@ -356,12 +357,22 @@ export async function sendMessageCustomOpenAI(
                         toolResult.success ? toolResult.data : { error: toolResult.error }
                     ),
                 });
+
+                if (toolResult.authRequired && toolResult.serverId) {
+                    authRequiredInfo = { serverId: toolResult.serverId };
+                }
             }
 
             // Inject user intervention if one is pending
             const intervention = getIntervention?.();
             if (intervention) {
                 currentMessages.push({ role: "user", content: `[User intervention]: ${intervention}` });
+            }
+
+            // If auth was required, break immediately — don't call LLM again
+            if (authRequiredInfo) {
+                continueLoop = false;
+                finalContent = "";
             }
 
             // Continue loop to get final response
@@ -380,5 +391,6 @@ export async function sendMessageCustomOpenAI(
         toolCalls: allToolCalls,
         debug: lastLLMDebug,
         debugEvents,
+        authRequired: authRequiredInfo,
     };
 }

@@ -152,7 +152,7 @@ export async function fetchModelsForProvider(
         setCache(provider, models);
         return { models, fromApi: true };
     } catch (err) {
-        console.warn("[model-fetcher] Failed to fetch models for " + provider + ":", err);
+        console.warn("[model-fetcher] Failed to fetch models for", provider, err);
         return { models: getFallbackModels(provider), fromApi: false };
     }
 }

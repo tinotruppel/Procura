@@ -135,4 +135,59 @@ describe("loadConfig", () => {
         expect(config.db.user).toBe("root");
         expect(config.db.password).toBe("");
     });
+
+    it("parses QDRANT_KEY_MAPPINGS correctly", () => {
+        process.env.QDRANT_KEY_MAPPINGS = "extKey1:qdrantKey1,extKey2:qdrantKey2";
+        const config = loadConfig();
+        expect(config.qdrantKeyMappings.get("extKey1")).toBe("qdrantKey1");
+        expect(config.qdrantKeyMappings.get("extKey2")).toBe("qdrantKey2");
+        expect(config.qdrantKeyMappings.size).toBe(2);
+    });
+
+    it("handles empty QDRANT_KEY_MAPPINGS", () => {
+        process.env.QDRANT_KEY_MAPPINGS = "";
+        const config = loadConfig();
+        expect(config.qdrantKeyMappings.size).toBe(0);
+    });
+
+    it("handles malformed QDRANT_KEY_MAPPINGS pairs", () => {
+        process.env.QDRANT_KEY_MAPPINGS = "noSeparator,valid:key,:noExtKey";
+        const config = loadConfig();
+        expect(config.qdrantKeyMappings.size).toBe(1);
+        expect(config.qdrantKeyMappings.get("valid")).toBe("key");
+    });
+
+    it("handles CLEANUP_INACTIVE_DAYS", () => {
+        process.env.CLEANUP_INACTIVE_DAYS = "30";
+        const config = loadConfig();
+        expect(config.cleanupInactiveDays).toBe(30);
+    });
 });
+
+describe("getConfig - error handling", () => {
+    it("should throw in non-test environment when config is invalid", async () => {
+        const originalVitest = process.env.VITEST;
+        const originalNodeEnv = process.env.NODE_ENV;
+        const originalPort = process.env.PORT;
+
+        delete process.env.VITEST;
+        process.env.NODE_ENV = "production";
+        process.env.PORT = "not-a-number";
+
+        try {
+            vi.resetModules();
+            const mod = await import("./config");
+            mod.resetConfig();
+
+            // In production mode with invalid PORT, getConfig should throw
+            expect(() => mod.getConfig()).toThrow("Failed to load configuration");
+        } finally {
+            if (originalVitest !== undefined) process.env.VITEST = originalVitest;
+            else delete process.env.VITEST;
+            process.env.NODE_ENV = originalNodeEnv || "";
+            if (originalPort !== undefined) process.env.PORT = originalPort;
+            else delete process.env.PORT;
+        }
+    });
+});
+

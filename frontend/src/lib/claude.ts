@@ -242,6 +242,7 @@ interface ToolProcessingResult {
     toolResults: ClaudeContent[];
     toolCalls: ToolCallInfo[];
     debugEvents: DebugEvent[];
+    authRequired?: { serverId: string };
 }
 
 /**
@@ -296,6 +297,8 @@ async function processToolCalls(
     const toolCalls: ToolCallInfo[] = [];
     const debugEvents: DebugEvent[] = [];
 
+    let authRequired: { serverId: string } | undefined;
+
     for (const toolUse of toolUses) {
         const toolCall: ToolCallInfo = {
             name: toolUse.name!,
@@ -315,6 +318,10 @@ async function processToolCalls(
         debugEvents.push(toolEvent);
         onDebugEvent?.(toolEvent);
 
+        if (toolResult.authRequired && toolResult.serverId) {
+            authRequired = { serverId: toolResult.serverId };
+        }
+
         toolResults.push({
             type: "tool_result",
             tool_use_id: toolUse.id,
@@ -324,7 +331,7 @@ async function processToolCalls(
         });
     }
 
-    return { toolResults, toolCalls, debugEvents };
+    return { toolResults, toolCalls, debugEvents, authRequired };
 }
 
 /**
@@ -354,6 +361,7 @@ export async function sendMessageClaude(
 
     let continueLoop = true;
     let finalText = "";
+    let authRequiredInfo: { serverId: string } | undefined;
 
     while (continueLoop) {
         const llmStartTime = performance.now();
@@ -381,6 +389,13 @@ export async function sendMessageClaude(
             allToolCalls.push(...result.toolCalls);
             debugEvents.push(...result.debugEvents);
 
+            if (result.authRequired) {
+                authRequiredInfo = result.authRequired;
+                // Break immediately — don't send results back to LLM
+                finalText = "";
+                break;
+            }
+
             claudeMessages.push({ role: "assistant", content });
 
             // Merge tool results with any pending user intervention into a single user message
@@ -405,5 +420,6 @@ export async function sendMessageClaude(
         toolCalls: allToolCalls,
         debug: lastLLMDebug,
         debugEvents,
+        authRequired: authRequiredInfo,
     };
 }

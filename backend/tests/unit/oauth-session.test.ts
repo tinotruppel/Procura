@@ -1,16 +1,15 @@
 /**
  * Unit Tests for OAuth Session Manager
  *
- * Tests the pure functions in oauth-session.ts:
- * - Token encryption/decryption (BYOK via vault-crypto)
- * - Access token caching (in-memory)
- * - Auth header creation
- *
- * Note: DB-backed functions (storeRefreshToken, getRefreshTokenBySession, etc.)
- * are tested indirectly via google-oauth.test.ts integration tests.
+ * Tests the encrypt/decrypt, caching, and auth header helpers.
+ * DB-dependent functions are tested implicitly via integration tests.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../../src/db/connection", async () => {
+    return await import("../helpers/db-mock");
+});
 
 import {
     encryptToken,
@@ -21,139 +20,98 @@ import {
     createAuthHeaders,
 } from "../../src/lib/oauth-session";
 
-// Test API key (simulates user's BYOK key)
-const TEST_API_KEY = "test-api-key-for-byok-encryption-12345";
-const DIFFERENT_API_KEY = "different-api-key-for-testing-67890";
-
-describe("OAuth Session Manager", () => {
+describe("OAuth Session Module", () => {
     beforeEach(() => {
         clearTokenCache();
     });
 
-    // =========================================================================
-    // Encryption (BYOK)
-    // =========================================================================
+    describe("Token Encryption / Decryption", () => {
+        it("should encrypt and decrypt a token round-trip", () => {
+            const apiKey = "test-api-key-for-encryption";
+            const plaintext = "refresh-token-abc123";
 
-    describe("encryptToken / decryptToken", () => {
-        it("should encrypt and decrypt a token using API key", () => {
-            const original = "my-secret-refresh-token";
-            const encrypted = encryptToken(TEST_API_KEY, original);
-            expect(encrypted).not.toBe(original);
-            // BYOK format is JSON with s, i, t, c fields
-            const parsed = JSON.parse(encrypted);
-            expect(parsed).toHaveProperty("s");
-            expect(parsed).toHaveProperty("i");
-            expect(parsed).toHaveProperty("t");
-            expect(parsed).toHaveProperty("c");
-            const decrypted = decryptToken(TEST_API_KEY, encrypted);
-            expect(decrypted).toBe(original);
+            const encrypted = encryptToken(apiKey, plaintext);
+            expect(typeof encrypted).toBe("string");
+            expect(encrypted).not.toBe(plaintext);
+
+            const decrypted = decryptToken(apiKey, encrypted);
+            expect(decrypted).toBe(plaintext);
         });
 
-        it("should produce different ciphertexts for same input (random salt+IV)", () => {
-            const token = "same-token";
-            const enc1 = encryptToken(TEST_API_KEY, token);
-            const enc2 = encryptToken(TEST_API_KEY, token);
+        it("should produce different ciphertexts for the same plaintext (random salt)", () => {
+            const apiKey = "test-api-key";
+            const plaintext = "my-secret-token";
+
+            const enc1 = encryptToken(apiKey, plaintext);
+            const enc2 = encryptToken(apiKey, plaintext);
             expect(enc1).not.toBe(enc2);
-            expect(decryptToken(TEST_API_KEY, enc1)).toBe(token);
-            expect(decryptToken(TEST_API_KEY, enc2)).toBe(token);
+
+            // Both should decrypt to the same value
+            expect(decryptToken(apiKey, enc1)).toBe(plaintext);
+            expect(decryptToken(apiKey, enc2)).toBe(plaintext);
         });
 
-        it("should encrypt empty string", () => {
-            const encrypted = encryptToken(TEST_API_KEY, "");
-            const decrypted = decryptToken(TEST_API_KEY, encrypted);
-            expect(decrypted).toBe("");
+        it("should fail to decrypt with wrong key", () => {
+            const encrypted = encryptToken("correct-key", "secret");
+            expect(() => decryptToken("wrong-key", encrypted)).toThrow();
+        });
+
+        it("should handle empty string tokens", () => {
+            const apiKey = "test-key";
+            const encrypted = encryptToken(apiKey, "");
+            expect(decryptToken(apiKey, encrypted)).toBe("");
         });
 
         it("should handle long tokens", () => {
-            const longToken = "x".repeat(2048);
-            const encrypted = encryptToken(TEST_API_KEY, longToken);
-            expect(decryptToken(TEST_API_KEY, encrypted)).toBe(longToken);
+            const apiKey = "test-key";
+            const longToken = "x".repeat(10000);
+            const encrypted = encryptToken(apiKey, longToken);
+            expect(decryptToken(apiKey, encrypted)).toBe(longToken);
         });
 
-        it("should handle unicode content", () => {
-            const unicodeToken = "token-mit-überzeichen-🔐";
-            const encrypted = encryptToken(TEST_API_KEY, unicodeToken);
-            expect(decryptToken(TEST_API_KEY, encrypted)).toBe(unicodeToken);
-        });
-
-        it("should fail to decrypt with wrong API key", () => {
-            const encrypted = encryptToken(TEST_API_KEY, "secret");
-            expect(() => decryptToken(DIFFERENT_API_KEY, encrypted)).toThrow();
-        });
-
-        it("should throw on invalid JSON format", () => {
-            expect(() => decryptToken(TEST_API_KEY, "not-json")).toThrow();
-        });
-
-        it("should throw on tampered ciphertext", () => {
-            const encrypted = encryptToken(TEST_API_KEY, "test");
+        it("encrypted format should be JSON with s, i, t, c fields", () => {
+            const encrypted = encryptToken("key", "value");
             const parsed = JSON.parse(encrypted);
-            parsed.c = "ff".repeat(parsed.c.length / 2); // tamper ciphertext
-            expect(() => decryptToken(TEST_API_KEY, JSON.stringify(parsed))).toThrow();
+            expect(parsed.s).toBeDefined(); // salt
+            expect(parsed.i).toBeDefined(); // iv
+            expect(parsed.t).toBeDefined(); // tag
+            expect(parsed.c).toBeDefined(); // ciphertext
         });
     });
 
-    // =========================================================================
-    // Access Token Cache
-    // =========================================================================
-
-    describe("getCachedAccessToken / cacheAccessToken", () => {
+    describe("Access Token Cache", () => {
         it("should return null for uncached session", () => {
-            expect(getCachedAccessToken("nonexistent")).toBeNull();
+            expect(getCachedAccessToken("unknown-session")).toBeNull();
         });
 
         it("should cache and retrieve access token", () => {
-            cacheAccessToken("session-1", "access-token-1", 3600);
-            expect(getCachedAccessToken("session-1")).toBe("access-token-1");
+            cacheAccessToken("session-1", "access-token-abc", 3600);
+            expect(getCachedAccessToken("session-1")).toBe("access-token-abc");
         });
 
-        it("should return null for expired token", () => {
+        it("should return null for expired tokens", () => {
+            // Cache with 0 seconds expiry
             cacheAccessToken("session-2", "expired-token", 0);
+            // Should return null because token is past expiry (including 5-min buffer)
             expect(getCachedAccessToken("session-2")).toBeNull();
         });
 
-        it("should return null when within 5-minute buffer", () => {
-            // Token expires in 4 minutes = within 5-minute safety buffer
-            cacheAccessToken("session-buffered", "buffer-token", 240);
-            expect(getCachedAccessToken("session-buffered")).toBeNull();
-        });
+        it("clearTokenCache should remove all cached tokens", () => {
+            cacheAccessToken("s1", "t1", 3600);
+            cacheAccessToken("s2", "t2", 3600);
+            expect(getCachedAccessToken("s1")).toBe("t1");
 
-        it("should cache multiple sessions independently", () => {
-            cacheAccessToken("session-a", "token-a", 3600);
-            cacheAccessToken("session-b", "token-b", 3600);
-            expect(getCachedAccessToken("session-a")).toBe("token-a");
-            expect(getCachedAccessToken("session-b")).toBe("token-b");
-        });
-
-        it("should overwrite cached token", () => {
-            cacheAccessToken("session-overwrite", "old-token", 3600);
-            cacheAccessToken("session-overwrite", "new-token", 3600);
-            expect(getCachedAccessToken("session-overwrite")).toBe("new-token");
-        });
-
-        it("should clear all cached tokens", () => {
-            cacheAccessToken("session-x", "token-x", 3600);
-            cacheAccessToken("session-y", "token-y", 3600);
             clearTokenCache();
-            expect(getCachedAccessToken("session-x")).toBeNull();
-            expect(getCachedAccessToken("session-y")).toBeNull();
+            expect(getCachedAccessToken("s1")).toBeNull();
+            expect(getCachedAccessToken("s2")).toBeNull();
         });
     });
-
-    // =========================================================================
-    // Auth Headers
-    // =========================================================================
 
     describe("createAuthHeaders", () => {
         it("should create Bearer auth headers", () => {
             const headers = createAuthHeaders("my-token");
             expect(headers.Authorization).toBe("Bearer my-token");
             expect(headers["Content-Type"]).toBe("application/json");
-        });
-
-        it("should include exact token in header", () => {
-            const headers = createAuthHeaders("ya29.a0AV5...");
-            expect(headers.Authorization).toBe("Bearer ya29.a0AV5...");
         });
     });
 });

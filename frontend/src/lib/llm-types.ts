@@ -27,6 +27,10 @@ export interface ToolCallInfo {
         success: boolean;
         data?: unknown;
         error?: string;
+        /** Set when MCP tool requires OAuth login before execution */
+        authRequired?: boolean;
+        /** MCP server ID that requires authentication */
+        serverId?: string;
     };
     observationId?: string; // Langfuse span ID for debugging
 }
@@ -76,6 +80,10 @@ export interface ChatMessage {
     debugEvents?: DebugEvent[]; // New: all events in sequence
     traceId?: string; // Langfuse trace ID for feedback scoring
     timestamp?: number; // Unix timestamp when response was received
+    /** Set when the agent loop was interrupted because a tool requires OAuth login */
+    authRequired?: { serverId: string };
+    /** Tool call that failed due to auth — will be re-executed after login */
+    pendingToolCall?: { name: string; args: Record<string, unknown> };
 }
 
 export interface LLMResponse {
@@ -83,6 +91,8 @@ export interface LLMResponse {
     toolCalls: ToolCallInfo[];
     debug?: LLMDebugInfo; // Keep for backward compat
     debugEvents?: DebugEvent[]; // New: all events in sequence
+    /** Set when the agent loop was interrupted because a tool requires OAuth login */
+    authRequired?: { serverId: string };
 }
 
 // Provider-specific model lists
