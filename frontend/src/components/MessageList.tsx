@@ -105,6 +105,32 @@ function hashCode(str: string): string {
     return Math.abs(hash).toString(36);
 }
 
+/**
+ * Recursively extract plain text from React children.
+ * Handles strings, numbers, arrays, and React elements (whose props.children
+ * may themselves contain nested nodes).  Falls back to JSON.stringify for
+ * unknown objects so we never render "[object Object]".
+ */
+function extractTextFromChildren(node: React.ReactNode): string {
+    if (node === null || node === undefined) return '';
+    if (typeof node === 'string') return node;
+    if (typeof node === 'number' || typeof node === 'boolean') return String(node);
+    if (Array.isArray(node)) return node.map(extractTextFromChildren).join('');
+    if (React.isValidElement(node)) {
+        const childProps = node.props as { children?: React.ReactNode };
+        return extractTextFromChildren(childProps.children);
+    }
+    // Plain object (e.g. unexpected JSON from LLM)
+    if (typeof node === 'object') {
+        try {
+            return JSON.stringify(node, null, 2);
+        } catch {
+            return '[complex object]';
+        }
+    }
+    return String(node);
+}
+
 // Pre block with copy button
 function PreWithCopy({ children }: { children?: React.ReactNode }) {
     const [copied, setCopied] = useState(false);
@@ -119,9 +145,7 @@ function PreWithCopy({ children }: { children?: React.ReactNode }) {
 
     // Extract code string from the code element's children
     const codeContent = child?.props?.children;
-    const codeString = typeof codeContent === 'string'
-        ? codeContent.replace(/\n$/, '')
-        : String(codeContent || '').replace(/\n$/, '');
+    const codeString = extractTextFromChildren(codeContent).replace(/\n$/, '');
 
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -398,7 +422,7 @@ const MemoizedMarkdown = memo(function MemoizedMarkdown({ content }: { content: 
 
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
-            const codeString = String(children).replace(/\n$/, "");
+            const codeString = extractTextFromChildren(children).replace(/\n$/, "");
 
             // Render Mermaid diagrams with stable key
             if (language === "mermaid") {
